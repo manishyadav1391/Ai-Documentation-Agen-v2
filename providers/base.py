@@ -84,49 +84,81 @@ class Provider(ABC):
         """
         ...
 
-    @abstractmethod
     def generate_labels(
         self, regions: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """
-        Accepts detected regions and returns them with a ``label`` key added.
+        """Accepts detected regions and returns them with a ``label`` key added."""
+        prompt = load_prompt(
+            "label_regions",
+            regions_json=self._to_json(regions),
+        )
+        from llm_ui import request_llm_processing
+        from config import get_config
+        cfg = get_config()
+        
+        result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=True)
+        if result is None:
+            raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
+            
+        merged_regions = []
+        for i, item in enumerate(regions):
+            merged = dict(item)
+            if i < len(result):
+                entry = result[i]
+                if isinstance(entry, dict):
+                    merged["label"] = entry.get("label", "")
+                else:
+                    merged["label"] = str(entry)
+            else:
+                merged["label"] = ""
+            merged_regions.append(merged)
+        return merged_regions
 
-        Args:
-            regions: List of region dicts (type, bbox, role, tag, etc.).
-
-        Returns:
-            A new list of region dicts, each containing at least ``label``.
-        """
-        ...
-
-    @abstractmethod
     def generate_field_descriptions(
         self, fields: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """
-        Accepts form fields and returns them with a ``description`` key added.
+        """Accepts form fields and returns them with a ``description`` key added."""
+        prompt = load_prompt(
+            "describe_fields",
+            fields_json=self._to_json(fields),
+        )
+        from llm_ui import request_llm_processing
+        from config import get_config
+        cfg = get_config()
+        
+        result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=True)
+        if result is None:
+            raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
+            
+        merged_fields = []
+        for i, item in enumerate(fields):
+            merged = dict(item)
+            if i < len(result):
+                entry = result[i]
+                if isinstance(entry, dict):
+                    merged["description"] = entry.get("description", "")
+                else:
+                    merged["description"] = str(entry)
+            else:
+                merged["description"] = ""
+            merged_fields.append(merged)
+        return merged_fields
 
-        Args:
-            fields: List of element dicts (tag, type, name, accessible_name,
-                validation attributes, etc.).
-
-        Returns:
-            A new list of field dicts, each containing at least ``description``.
-        """
-        ...
-
-    @abstractmethod
     def generate_procedure_prose(self, screens: List[Dict[str, Any]]) -> str:
-        """
-        Accepts a sequence of screen metadata and returns procedure prose.
-
-        Args:
-            screens: List of screen dicts (title, url, regions, actions, etc.).
-
-        Returns:
-            Plain-text procedure prose suitable for insertion into a .docx.
-        """
-        ...
+        """Accepts a sequence of screen metadata and returns procedure prose."""
+        prompt = load_prompt(
+            "procedure_prose",
+            screens_json=self._to_json(screens),
+        )
+        from llm_ui import request_llm_processing
+        from config import get_config
+        cfg = get_config()
+        
+        result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=False)
+        if result is None:
+            raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
+            
+        return result
 
     @staticmethod
     def _to_json(data: Any) -> str:

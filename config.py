@@ -113,16 +113,23 @@ class Config(BaseModel):
         except KeyError as exc:
             raise ValueError(f"Unknown provider: {self.provider}") from exc
 
-    def get_api_key(self) -> Optional[str]:
+    def get_api_key(self, provider_name: Optional[str] = None) -> Optional[str]:
         """
-        Return the resolved API key for the active provider.
+        Return the resolved API key for the active or specified provider.
 
         Returns ``None`` when using browser mode.
         """
         _ensure_env()
-        if self.provider == "browser":
+        p = provider_name or self.provider
+        if p == "browser":
             return None
-        provider_cfg = self.get_active_provider_config()
+        mapping = {
+            "browser": self.providers.browser,
+            "anthropic": self.providers.anthropic,
+            "openai_compat": self.providers.openai_compat,
+            "ollama": self.providers.ollama,
+        }
+        provider_cfg = mapping.get(p)
         env_name = getattr(provider_cfg, "api_key_env", None)
         if env_name:
             return os.environ.get(env_name)

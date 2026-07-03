@@ -22,7 +22,7 @@ class OllamaProvider(Provider):
         self.provider_cfg = cfg.providers.ollama
         self.model = self.provider_cfg.model
         self.host = self.provider_cfg.host
-        self.api_key = cfg.get_api_key()
+        self.api_key = cfg.get_api_key("ollama")
 
         headers = {}
         if self.api_key:
@@ -43,35 +43,7 @@ class OllamaProvider(Provider):
     # Public interface
     # --------------------------------------------------------------------- #
 
-    def generate_labels(
-        self, regions: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """Send label prompt to Ollama and parse JSON response."""
-        prompt = load_prompt(
-            "label_regions",
-            regions_json=self._to_json(regions),
-        )
-        raw = self._chat(prompt)
-        return self._parse_json_response(raw, regions, "label")
 
-    def generate_field_descriptions(
-        self, fields: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """Send field-description prompt to Ollama and parse JSON response."""
-        prompt = load_prompt(
-            "describe_fields",
-            fields_json=self._to_json(fields),
-        )
-        raw = self._chat(prompt)
-        return self._parse_json_response(raw, fields, "description")
-
-    def generate_procedure_prose(self, screens: List[Dict[str, Any]]) -> str:
-        """Send prose prompt to Ollama and return plain text."""
-        prompt = load_prompt(
-            "procedure_prose",
-            screens_json=self._to_json(screens),
-        )
-        return self._chat(prompt)
 
     # --------------------------------------------------------------------- #
     # Internal helpers

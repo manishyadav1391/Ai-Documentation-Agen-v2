@@ -89,6 +89,21 @@ def process_screen_regions(session_dir: Path, screen_index: int):
     regions.extend(detect_table_headers(elements))
     regions.extend(detect_standalone_actions(elements))
     
+    if not regions:
+        # Fallback: create individual regions for visible interactive elements if heuristics return 0
+        for el in elements:
+            tag = el.get('tag', '')
+            role = el.get('role', '')
+            bbox = el.get('bounding_box', {})
+            name = el.get('accessible_name') or el.get('name')
+            
+            if (tag in ['button', 'input', 'select', 'textarea'] or role == 'button') and name:
+                regions.append({
+                    "role": "action_button" if (tag == 'button' or role == 'button') else "filter_form",
+                    "bounding_box": bbox,
+                    "elements_contained": [name]
+                })
+    
     # Save the detected regions
     with regions_path.open("w", encoding="utf-8") as f:
         json.dump(regions, f, indent=2)

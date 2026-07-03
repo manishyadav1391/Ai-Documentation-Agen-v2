@@ -28,6 +28,10 @@ class Labeler:
         regions_path = session_dir / f"screen_{screen_index}_regions.json"
         labeled_path = session_dir / f"screen_{screen_index}_labeled.json"
         
+        if labeled_path.exists():
+            print(f"Labels already exist for Screen {screen_index}. Skipping LLM labeling.")
+            return
+
         if not regions_path.exists():
             print(f"No regions file found for Screen {screen_index}.")
             return
@@ -77,6 +81,10 @@ class Labeler:
         final_regions_path = session_dir / f"screen_{screen_index}_final.json"
         content_path = session_dir / f"screen_{screen_index}_content.json"
         
+        if content_path.exists():
+            print(f"Content already exists for Screen {screen_index}. Skipping generation.")
+            return
+
         if not elements_path.exists() or not final_regions_path.exists():
             print(f"Required data missing to generate content for Screen {screen_index}.")
             return
@@ -87,13 +95,30 @@ class Labeler:
         with final_regions_path.open("r", encoding="utf-8") as f:
             final_regions_data = json.load(f)
 
-        # Prepare form fields for description generation
+        # Prepare form fields for description generation, mapping to user-labeled sections
         fields_for_describing = []
         for el in elements_data:
             if el.get("tag") in ["input", "select", "textarea"]:
+                el_bbox = el.get("bounding_box", {})
+                section_name = "Form Field"
+                
+                # Check which visual region the DOM element falls inside
+                for r in final_regions_data:
+                    r_bbox = r.get("bounding_box", {})
+                    if el_bbox and r_bbox:
+                        el_cx = el_bbox.get("x", 0) + el_bbox.get("width", 0) / 2
+                        el_cy = el_bbox.get("y", 0) + el_bbox.get("height", 0) / 2
+                        rx = r_bbox.get("x", 0)
+                        ry = r_bbox.get("y", 0)
+                        rw = r_bbox.get("width", 0)
+                        rh = r_bbox.get("height", 0)
+                        if rx <= el_cx <= rx + rw and ry <= el_cy <= ry + rh:
+                            section_name = r.get("label", "Form Field")
+                            break
+                            
                 fields_for_describing.append(
                     FieldForDescribing(
-                        name=el.get("accessible_name") or el.get("name") or "Unnamed Field",
+                        name=f"{section_name} -> {el.get('accessible_name') or el.get('name') or 'Unnamed Field'}",
                         type=el.get("type") or "text",
                         required=el.get("required", False),
                         placeholder=el.get("placeholder"),
@@ -114,8 +139,23 @@ class Labeler:
                 "description": descriptions[i] if i < len(descriptions) else ""
             })
 
-        # Placeholder for procedure actions mapping
-        actions = [{"action": "Navigate and interact", "target": "Screen elements"}] 
+        # Generate action sequence dynamically from the final reviewed regions
+        actions = []
+        for r in final_regions_data:
+            role = r.get("role", "")
+            label = r.get("label", "")
+            if role == "action_button":
+                actions.append({"action": "Click", "target": label})
+            elif role == "filter_form":
+                actions.append({"action": "Fill details in", "target": label})
+            elif role == "table_header" or role == "view_only":
+                actions.append({"action": "Review data in", "target": label})
+            else:
+                actions.append({"action": "Interact with", "target": label})
+                
+        if not actions:
+            actions = [{"action": "Navigate and interact", "target": "Screen elements"}]
+            
         prose = self.provider.procedure_prose(actions, context="User operation")
 
         content_data = {

@@ -1,0 +1,64 @@
+hat has been implemented:
+Interactive Click-and-Drag Box Drawing:
+
+In 
+
+review_ui.py
+, you can now click and drag your mouse directly on the canvas image to draw new bounding boxes.
+Upon releasing, it automatically calculates the correct coordinates on the original image (using the scaling factors) and pre-populates the Add Region dialog form so you do not have to guess or type coordinates.
+Canvas Interaction & Highlighting:
+
+Single-clicking inside any bounding box on the canvas automatically selects the corresponding item in the left list.
+Double-clicking any box on the canvas opens the detailed edit dialog for that region.
+Selecting a region in the list highlights it on the canvas with a thick blue border.
+Nudge Box Controls:
+
+Added arrow button controls (↑, ↓, ←, →) and size adjustment buttons (W+, W-, H+, H-) to let you fine-tune the size and location of the selected bounding box easily without opening any menus.
+Real-time On-the-Fly Previews:
+
+Clicking 👁️ Preview Annotation Boxes saves your edits, regenerates the annotated screenshot with boxes and leader lines, and immediately reloads it onto the canvas.
+Dynamic Description and Prose Generation:
+
+In 
+
+labeler.py
+, the form fields sent for descriptions are now checked spatially against your finalized boxes. If a textbox or select dropdown falls inside one of your custom regions, its name is automatically prefixed (e.g. Search Filter Panel -> Date range search field) so the AI writes contextually accurate instructions.
+The procedure prose actions list is now built dynamically from your final custom regions and roles instead of using static placeholder strings.
+I have created a comprehensive 
+walkthrough.md
+ documenting all features and how to use them. You can run the dashboard with python ui/launcher.py to try it out!
+
+
+# Walkthrough - Interactive Bounding Box Annotation Editor & Dynamic Context Mapping
+
+We have successfully implemented the full interactive visual annotation editor and connected it dynamically to the downstream AI description and prose generation.
+
+## Implemented Features
+
+### 1. Interactive Visual Annotation Editor (`review_ui.py`)
+The Review UI is now a fully featured, self-contained visual annotation editor:
+* **Interactive Drag-to-Draw**: Users can click and drag on the screenshot canvas to draw a dashed rectangle representing a new region. The coordinates are scaled and mapped back to the original image resolution automatically, opening the "Add Region" dialog with pre-populated dimensions.
+* **Canvas Box Selection & Editing**:
+  * Single-clicking on an existing region box selects it in the treeview.
+  * Double-clicking a region box directly on the canvas opens a comprehensive edit dialog.
+* **Full Field Customization**: The region dialog allows modifying the **Label**, **Role** (using a dropdown), and box dimensions/coordinates (`X`, `Y`, `Width`, `Height`).
+* **Nudge Bounding Box Controls**: Added dedicated direction arrow buttons (`↑`, `↓`, `←`, `→`) and resizing buttons (`W+`, `W-`, `H+`, `H-`) to fine-tune box placement by 5 pixels at a time directly from the left toolbar.
+* **On-the-Fly Preview Rendering**: Clicking the **👁️ Preview Annotation Boxes** button regenerates the final annotated image (`screen_N_annotated.png`) in real time by invoking the rendering engine and reloading it on the canvas.
+
+### 2. Context-Aware AI Generation (`labeler.py`)
+We linked the user's manual adjustments directly to the AI generator inputs:
+* **Dynamic Step-by-Step Actions (Prose)**: The actions list sent to the LLM for procedure prose is built dynamically from the user's final reviewed regions and labels (e.g., `Click "Add User Button"`, `Fill details in "Search Filter Panel"`) instead of using a static generic placeholder.
+* **Spatial Field Mapping (Descriptions)**: Interactive form inputs (textboxes, dropdowns) are checked spatially against the final bounding boxes. If a field lies inside a user-labeled region, its name is prefixed with that region's custom label (e.g., `Search Filter Panel -> From Date`), prompting the LLM to generate highly contextual descriptions.
+
+---
+
+## Verification Plan
+
+### Manual Verification
+1. Run `python ui/launcher.py`.
+2. Record a module with screenshots.
+3. In the review screen:
+   - Click and drag to create new boxes.
+   - Use the **W+** or **←** buttons to nudge and select boxes.
+   - Click **👁️ Preview Annotation Boxes** to see your additions drawn immediately.
+   - Complete processing and check the generated `screen_N_content.json` file to verify that the field names and action list dynamically align with your custom labels.

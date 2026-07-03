@@ -20,7 +20,7 @@ class OpenAICompatProvider(Provider):
     def __init__(self) -> None:
         cfg = get_config()
         self.provider_cfg = cfg.providers.openai_compat
-        self.api_key = cfg.get_api_key()
+        self.api_key = cfg.get_api_key("openai_compat")
         self.model = self.provider_cfg.model
         self.base_url = self.provider_cfg.base_url
         self.max_tokens = self.provider_cfg.max_tokens
@@ -49,35 +49,7 @@ class OpenAICompatProvider(Provider):
     # Public interface
     # --------------------------------------------------------------------- #
 
-    def generate_labels(
-        self, regions: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """Send label prompt and parse JSON response."""
-        prompt = load_prompt(
-            "label_regions",
-            regions_json=self._to_json(regions),
-        )
-        raw = self._chat(prompt)
-        return self._parse_json_response(raw, regions, "label")
 
-    def generate_field_descriptions(
-        self, fields: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """Send field-description prompt and parse JSON response."""
-        prompt = load_prompt(
-            "describe_fields",
-            fields_json=self._to_json(fields),
-        )
-        raw = self._chat(prompt)
-        return self._parse_json_response(raw, fields, "description")
-
-    def generate_procedure_prose(self, screens: List[Dict[str, Any]]) -> str:
-        """Send prose prompt and return plain text."""
-        prompt = load_prompt(
-            "procedure_prose",
-            screens_json=self._to_json(screens),
-        )
-        return self._chat(prompt)
 
     # --------------------------------------------------------------------- #
     # Internal helpers

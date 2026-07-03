@@ -18,7 +18,7 @@ ROLE_COLOR = {
     "action_button":"red",
     "action_group": "red",
     "table_header": "red",
-    "view_only":    "green",
+    "view_only":    "red",
 }
 
 @dataclass

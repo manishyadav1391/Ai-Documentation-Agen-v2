@@ -30,8 +30,8 @@ providers:
     max_tokens: 1000
 
   ollama:
-    host: http://localhost:11434
-    model: llama3.2
+    host: https://ollama.com
+    model: gpt-oss:120b
     api_key_env: OLLAMA_API_KEY
 
 # --- Document Template ------------------------------------------------------

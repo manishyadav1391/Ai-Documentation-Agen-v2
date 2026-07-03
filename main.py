@@ -6,42 +6,31 @@ from detect_regions import process_screen_regions
 from labeler import Labeler
 from review_ui import open_review_ui
 from annotate import render_annotations
-from assemble import assemble_manual
+from assemble import assemble_module
 
-# Assuming a basic factory exists in providers to load the correct class
-# For this script, we'll import the base and browser as a default fallback
-from providers.base import LLMProvider
-from providers.browser import BrowserProvider
+# Assume get_provider_instance loads the correct provider mapping to llm_ui.py
+from providers.browser import BrowserProvider 
 
-def get_provider_instance(config) -> LLMProvider:
-    """
-    FR-21 & FR-22: Instantiates the selected LLM provider based on config.yaml.
-    """
-    # In a full implementation, this would dynamically route to Anthropic, OpenAI, etc.
-    # We default to the BrowserProvider (claude.ai copy-paste) as specified in the SRS.
-    if config.provider == "browser":
-        return BrowserProvider()
-    
-    # Fallback
-    print(f"Provider '{config.provider}' selected but module not loaded. Falling back to browser.")
+def get_provider_instance(config):
+    """Instantiates the selected LLM provider based on config.yaml."""
+    # In a full integration, this maps to the specific Provider classes.
     return BrowserProvider()
 
 def run_pipeline():
-    """Executes the linear pipeline architecture defined in the SRS."""
+    """Executes the linear pipeline architecture with multi-screen traversal."""
     print("=======================================================")
     print("      Documentation Automation Bot - Pipeline Start      ")
     print("=======================================================")
     
-    # 1. Initialization
     config = load_config("config.yaml")
     provider = get_provider_instance(config)
     bot_labeler = Labeler(provider)
     
-    # 2. Stage 1: Capture
-    # We initiate the Playwright session for the user to navigate and capture screens.
+    # 1. Capture Phase
+    print("\n--- PHASE 1: Capture Session ---")
     run_capture_session()
     
-    # Find the most recent session folder to process
+    # Locate the newly created session folder
     sessions_dir = Path(config.sessions_dir)
     sessions = sorted(sessions_dir.glob("session_*"))
     if not sessions:
@@ -51,38 +40,53 @@ def run_pipeline():
     latest_session = sessions[-1]
     print(f"\nProcessing session data in: {latest_session.name}")
     
-    # Count the number of screens captured by looking at the elements JSON files
+    # Count the total number of captured screens
     screens = list(latest_session.glob("screen_*_elements.json"))
     num_screens = len(screens)
     
-    # Loop through the linear pipeline for each screen
-    for screen_index in range(1, num_screens + 1):
-        print(f"\n--- Processing Screen {screen_index} of {num_screens} ---")
+    if num_screens == 0:
+        print("No screens were captured. Exiting.")
+        return
+
+    # 2. Processing & Review Phase (Multi-Screen Loop)
+    print(f"\n--- PHASE 2: Processing {num_screens} Screens ---")
+    
+    screen_index = 1
+    while 1 <= screen_index <= num_screens:
+        print(f"\n--- Screen {screen_index} of {num_screens} ---")
         
-        # Stage 2: Detect
+        # Detect Semantic Regions
         process_screen_regions(latest_session, screen_index)
         
-        # Stage 3: Label
+        # Label Regions via LLM Orchestrator[cite: 1]
         bot_labeler.label_screen_regions(latest_session, screen_index)
         
-        # Stage 4: Review
+        # Open the Visual Review UI and capture the user's navigation choice
         print(f"Opening Review UI for Screen {screen_index}...")
-        open_review_ui(latest_session, screen_index)
         
-        # Stage 5: Annotate
-        # Ensures the final render runs just in case the user bypassed the preview button
+        # open_review_ui now needs to return a string: 'next', 'prev', or 'quit'
+        nav_action = open_review_ui(latest_session, screen_index, total_screens=num_screens)
+        
+        # Render the final PNG regardless of navigation direction to save state
         render_annotations(latest_session, screen_index)
         
-        # Stage 6: Describe
-        bot_labeler.generate_screen_content(latest_session, screen_index)
-        
-    # Stage 7: Assemble
-    print("\n--- Final Assembly ---")
-    assemble_manual(latest_session)
+        # Handle the navigation routing
+        if nav_action == "prev" and screen_index > 1:
+            screen_index -= 1
+        elif nav_action == "quit":
+            print("Session processing manually aborted.")
+            return
+        else:
+            # Generate the prose and field descriptions only when moving forward
+            bot_labeler.generate_screen_content(latest_session, screen_index)
+            screen_index += 1
+            
+    # 3. Assembly Phase
+    print("\n--- PHASE 3: Module Assembly ---")
+    assemble_module(latest_session)
     print("\n=======================================================")
-    print("        Pipeline execution completed successfully!       ")
+    print("        Module processing completed successfully!        ")
     print("=======================================================")
 
 if __name__ == "__main__":
-    # Execute the full pipeline if run directly
     run_pipeline()
