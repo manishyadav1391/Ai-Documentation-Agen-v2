@@ -1,0 +1,49 @@
+# ==============================================================================
+# Documentation Automation Bot — User Configuration
+# ==============================================================================
+# Place this file next to the DocBot.exe (or run from the project root).
+
+# --- LLM Provider -----------------------------------------------------------
+# Default provider for the current session.
+# Options:
+#   browser       — Copy-paste prompts into claude.ai manually (default, no API key).
+#   anthropic     — Direct Anthropic API calls.
+#   openai_compat — OpenAI-compatible endpoints (Groq, Together AI, etc.).
+#   ollama        — Ollama local or remote endpoint.
+provider: browser
+
+# --- Provider-specific settings ---------------------------------------------
+# Only the block matching the selected provider above is read.
+providers:
+  browser:
+    editor_command: notepad   # Windows program to open prompt.txt
+
+  anthropic:
+    api_key_env: ANTHROPIC_API_KEY
+    model: claude-3-5-sonnet-20241022
+    max_tokens: 1000
+
+  openai_compat:
+    api_key_env: OPENAI_API_KEY
+    base_url: https://api.groq.com/openai/v1
+    model: llama-3.3-70b-versatile
+    max_tokens: 1000
+
+  ollama:
+    host: http://localhost:11434
+    model: llama3.2
+    api_key_env: OLLAMA_API_KEY
+
+# --- Document Template ------------------------------------------------------
+# Which client template to use when starting a new session.
+default_template: ncd
+
+# --- Rendering Options ------------------------------------------------------
+render:
+  label_font_size: 20
+  region_stroke_width: 3
+  callout_border_width: 2
+
+# --- Session Output ---------------------------------------------------------
+# Directory where screenshots, JSON, and final .docx files are stored.
+sessions_dir: sessions
