@@ -2,12 +2,18 @@ import json
 from pathlib import Path
 from config import get_config
 from templates.ncd.builder import NCDBuilder
+from templates.gstat.builder import GSTATBuilder
+from templates.corporate.builder import CorporateBuilder
 
-def get_template_builder(template_name: str):
+def get_template_builder(template_name: str, style_config: dict = None):
     """Factory to return the correct document builder."""
-    builders = {"ncd": NCDBuilder}
-    builder_class = builders.get(template_name.lower(), NCDBuilder)
-    return builder_class()
+    builders = {
+        "ncd": NCDBuilder,
+        "gstat": GSTATBuilder,
+        "corporate": CorporateBuilder
+    }
+    builder_class = builders.get(template_name.lower(), CorporateBuilder)
+    return builder_class(style_config)
 
 def assemble_module(session_dir: Path):
     """
@@ -16,7 +22,8 @@ def assemble_module(session_dir: Path):
     """
     config = get_config()
     template_name = config.default_template
-    builder = get_template_builder(template_name)
+    style_config = config.theme.model_dump() if hasattr(config, "theme") else None
+    builder = get_template_builder(template_name, style_config)
     
     print(f"\nAssembling local module draft using template: '{template_name}'...")
     

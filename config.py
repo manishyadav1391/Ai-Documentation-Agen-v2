@@ -69,6 +69,17 @@ class RenderConfig(BaseModel):
     callout_border_width: int = 2
 
 
+class BrandThemeConfig(BaseModel):
+    """Brand theme styling for manuals."""
+    font_name: str = "Segoe UI"
+    primary_color: str = "1B365D"
+    secondary_color: str = "D97706"
+    text_color: str = "333333"
+    logo_path: str = ""
+    company_name: str = "Corporate Corporation"
+    subtitle: str = "Comprehensive User Guide & Technical Documentation"
+
+
 class ProvidersConfig(BaseModel):
     """All provider-specific blocks."""
     browser: BrowserProviderConfig = Field(default_factory=BrowserProviderConfig)
@@ -94,6 +105,7 @@ class Config(BaseModel):
     sessions_dir: str = "sessions"
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     render: RenderConfig = Field(default_factory=RenderConfig)
+    theme: BrandThemeConfig = Field(default_factory=BrandThemeConfig)
 
     @property
     def sessions_path(self) -> Path:
@@ -175,3 +187,10 @@ def reload_config(config_path: Any = Path("config.yaml")) -> Config:
     global _config_instance
     _config_instance = load_config(config_path)
     return _config_instance
+
+
+def save_config(config_obj: Config, config_path: Any = Path("config.yaml")) -> None:
+    """Save the Config instance back to the config.yaml file."""
+    config_path = Path(config_path)
+    with config_path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(config_obj.model_dump(), f, sort_keys=False)

@@ -2,11 +2,17 @@ import json
 from pathlib import Path
 from config import get_config
 from templates.ncd.builder import NCDBuilder
+from templates.gstat.builder import GSTATBuilder
+from templates.corporate.builder import CorporateBuilder
 
-def get_template_builder(template_name: str):
-    builders = {"ncd": NCDBuilder}
-    builder_class = builders.get(template_name.lower(), NCDBuilder)
-    return builder_class()
+def get_template_builder(template_name: str, style_config: dict = None):
+    builders = {
+        "ncd": NCDBuilder,
+        "gstat": GSTATBuilder,
+        "corporate": CorporateBuilder
+    }
+    builder_class = builders.get(template_name.lower(), CorporateBuilder)
+    return builder_class(style_config)
 
 def assemble_master_manual(ordered_session_dirs: list[Path], output_path: Path):
     """
@@ -14,7 +20,8 @@ def assemble_master_manual(ordered_session_dirs: list[Path], output_path: Path):
     managing sequential figure numbers across modules.
     """
     config = get_config()
-    builder = get_template_builder(config.default_template)
+    style_config = config.theme.model_dump() if hasattr(config, "theme") else None
+    builder = get_template_builder(config.default_template, style_config)
     
     print("=======================================================")
     print("         Generating Master Client Manual...            ")
@@ -30,6 +37,14 @@ def assemble_master_manual(ordered_session_dirs: list[Path], output_path: Path):
     # 2. Iterate through the ordered list of modules
     for session_dir in ordered_session_dirs:
         print(f"\nProcessing module: {session_dir.name}...")
+        
+        # Add section divider page if using corporate layout
+        if hasattr(builder, "add_divider_page"):
+            module_name = session_dir.name.replace("session_", "Session ").replace("_", " ").title()
+            builder.add_divider_page(
+                title=module_name,
+                description=f"Detailed procedural steps and interface dictionary for {module_name}."
+            )
         
         local_screen_index = 1
         while True:
