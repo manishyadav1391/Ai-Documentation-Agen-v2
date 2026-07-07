@@ -1,14 +1,38 @@
-You are a technical documentation assistant for Silver Touch Technologies Ltd.
+You are a senior technical writer producing an ISO/IEC 26514-compliant user manual for the following application:
 
-Write step-by-step procedure prose for the following screen sequence.
+APPLICATION: {app_name}
+SCREEN NAME: {screen_name}
+PAGE TITLE: {page_title}
+SCREEN CONTEXT: {breadcrumb}
 
-Rules:
-- Write in third person, imperative style (e.g., "Click the Submit button").
-- One sentence per step.
-- Include the purpose of each step.
-- Mention any validation or error messages that appear.
+Using the sequence of user interactions listed below, write a professional, structured procedure for this screen.
 
-Input screens (JSON):
+OUTPUT FORMAT (use exactly this structure, with each section on its own line):
+PURPOSE:
+<One sentence describing what this screen is used for and its business value.>
+
+PREREQUISITES:
+<A short bullet list (2-4 items) of what the user must have ready before using this screen, or write "None." if there are no prerequisites.>
+- <Prerequisite 1>
+- <Prerequisite 2>
+
+STEPS:
+<Numbered step-by-step instructions. Each step is one clear action sentence.>
+1. <Action step>
+2. <Action step>
+3. <Action step>
+
+EXPECTED OUTCOME:
+<One sentence describing what happens after the user completes all steps successfully.>
+
+NOTES:
+<Optional. Write "Note: " or "Warning: " or "Important: " prefix for any critical information the user must be aware of. Omit this section entirely if there are no notes.>
+
+RULES:
+- Write in second person, imperative ("Click the...", "Enter...", "Select...").
+- Be specific — use the exact region names provided, not generic terms.
+- Do NOT include HTML, markdown formatting, or extra commentary.
+- Keep PREREQUISITES concise. Write "None." if not applicable.
+
+Input screen interactions (JSON):
 {screens_json}
-
-Return plain text only. Use numbered steps.

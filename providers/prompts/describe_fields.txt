@@ -1,17 +1,26 @@
-You are a technical documentation assistant for Silver Touch Technologies Ltd.
+You are a senior technical writer creating an enterprise-grade user manual for the following application:
 
-Describe the purpose of each form field below for a client user manual.
+APPLICATION: {app_name}
+PAGE TITLE: {page_title}
+SCREEN NAME: {screen_name}
 
-Rules:
-- Be concise (1–2 sentences).
-- Explain what the user should enter or select.
-- Mention any obvious validation rules (e.g., "Maximum 50 characters").
+Your task is to write a concise, professional functional description for each UI field or element listed below.
+
+STRICT RULES:
+1. Write EXACTLY 1–2 sentences per field.
+2. Describe the PURPOSE and what the user should enter, select, or do — from the user's perspective.
+3. Mention validation rules if obvious from the field name or type (e.g., "Required field", "Numeric only", "Maximum 100 characters").
+4. Do NOT describe password fields or fields marked [REDACTED] — skip them by writing "N/A — This field is not applicable for documentation."
+5. Do NOT begin descriptions with "This field" — vary your sentence starters.
+6. Write in active voice, second person (e.g., "Enter the...", "Select the...", "Click to...").
+7. Match the professional tone of an ISO/IEC 26514 compliant technical manual.
 
 Input fields (JSON):
 {fields_json}
 
-Return ONLY a JSON array with the same number of items, in the same order:
+Return ONLY a JSON array with EXACTLY the same number of items as the input, in the same order:
 [
-  {"description": "Enter the user's full name. Maximum 100 characters."},
-  {"description": "Select the department from the dropdown list."}
+  {"description": "Enter the registered username associated with the user account. This field is required to authenticate access to the system."},
+  {"description": "N/A — This field is not applicable for documentation."},
+  {"description": "Select the user's department from the dropdown list to assign correct access permissions."}
 ]

@@ -313,7 +313,7 @@ class LauncherUI:
             session_name = self.session_listbox.get(i)
             ordered_sessions.append(sessions_dir / session_name)
             
-        output_path = Path("Final_Client_Manual.docx")
+        output_path = Path("Final_Manuals/Final_Client_Manual.docx")
         try:
             assemble_master_manual(ordered_sessions, output_path)
             messagebox.showinfo("Success", f"Professional Manual compiled successfully!\nSaved to: {output_path.absolute()}")

@@ -1,15 +1,11 @@
 import json
 from pathlib import Path
 from config import get_config
-from templates.ncd.builder import NCDBuilder
-from templates.gstat.builder import GSTATBuilder
 from templates.corporate.builder import CorporateBuilder
 
 def get_template_builder(template_name: str, style_config: dict = None):
     """Factory to return the correct document builder."""
     builders = {
-        "ncd": NCDBuilder,
-        "gstat": GSTATBuilder,
         "corporate": CorporateBuilder
     }
     builder_class = builders.get(template_name.lower(), CorporateBuilder)
@@ -27,6 +23,11 @@ def assemble_module(session_dir: Path):
     
     print(f"\nAssembling local module draft using template: '{template_name}'...")
     
+    draft_title = f"Module Draft: {session_dir.name.replace('session_', 'Session ').replace('_', ' ').title()}"
+    draft_desc = "This is a lightweight local module draft containing screen annotation details, procedural instructions, and the interface element dictionary."
+    if hasattr(builder, "add_draft_title"):
+        builder.add_draft_title(draft_title, draft_desc)
+    
     screen_index = 1
     while True:
         img_path = session_dir / f"screen_{screen_index}_annotated.png"
@@ -40,9 +41,21 @@ def assemble_module(session_dir: Path):
         with content_path.open("r", encoding="utf-8") as f:
             content_data = json.load(f)
             
-        builder.add_screen_section(screen_index, img_path, content_data)
+        # Load meta for semantic screen name
+        meta_path = session_dir / f"screen_{screen_index}_meta.json"
+        screen_meta = {}
+        if meta_path.exists():
+            try:
+                with meta_path.open("r", encoding="utf-8") as f:
+                    screen_meta = json.load(f)
+            except Exception:
+                pass
+
+        builder.add_screen_section(screen_index, img_path, content_data, screen_meta=screen_meta)
         screen_index += 1
         
     output_docx = session_dir / "module_draft.docx"
+    # Ensure parent directory exists
+    output_docx.parent.mkdir(parents=True, exist_ok=True)
     builder.save(output_docx)
     print(f"Module assembly complete! Saved to {output_docx.name}")

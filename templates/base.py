@@ -95,22 +95,34 @@ class DocumentBuilder(ABC):
         run._r.append(fldChar3)
 
     def setup_header_footer(self, logo_path: Path, doc_title: str, font_name: str = 'Arial'):
-        """Creates a professional logo header (left) and document title (right) + footer numbering."""
+        """Creates a professional logo header (left) and document title (right) + footer numbering.
+        Safe to call multiple times — clears existing header content before writing.
+        Only applies to non-first-page sections (cover page is excluded via different_first_page_header_footer).
+        """
+        from docx.oxml.ns import qn
+        from docx.oxml import OxmlElement
+
         for section in self.doc.sections:
             section.different_first_page_header_footer = True
-            
-            # Setup Header
+
+            # ── HEADER ────────────────────────────────────────────────────────
             header = section.header
             header.is_linked_to_previous = False
-            # Clear paragraphs in header
-            for p in header.paragraphs:
-                p.text = ""
-                
-            # Header borderless table layout
+
+            # Fully clear ALL existing paragraphs and tables in the header XML
+            hdr_element = header._element
+            for child in list(hdr_element):
+                hdr_element.remove(child)
+
+            # Re-create the header body paragraph (Word requires at least one)
+            # Use a table for logo-left / title-right layout
+            hdr_p = OxmlElement('w:p')
+            hdr_element.append(hdr_p)
+
             table = header.add_table(rows=1, cols=2, width=Inches(6.5))
             table.autofit = False
-            
-            # remove table borders (XML styling)
+
+            # Remove all table borders
             tblPr = table._tbl.tblPr
             tblBorders = OxmlElement('w:tblBorders')
             for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
@@ -118,21 +130,21 @@ class DocumentBuilder(ABC):
                 border.set(qn('w:val'), 'none')
                 tblBorders.append(border)
             tblPr.append(tblBorders)
-            
-            # Column widths
+
             table.columns[0].width = Inches(3.25)
             table.columns[1].width = Inches(3.25)
-            
-            # Cell 0: Logo
+
+            # Cell 0: Logo (left-aligned)
             cell_logo = table.cell(0, 0)
             p_logo = cell_logo.paragraphs[0]
-            if logo_path and logo_path.exists():
+            p_logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            if logo_path and Path(logo_path).exists():
                 try:
-                    p_logo.add_run().add_picture(str(logo_path), height=Inches(0.4))
+                    p_logo.add_run().add_picture(str(logo_path), height=Inches(0.38))
                 except Exception:
                     pass
-            
-            # Cell 1: Doc Title
+
+            # Cell 1: Document title (right-aligned)
             cell_title = table.cell(0, 1)
             p_title = cell_title.paragraphs[0]
             p_title.alignment = WD_ALIGN_PARAGRAPH.RIGHT
@@ -141,26 +153,66 @@ class DocumentBuilder(ABC):
             run_title.font.size = Pt(8.5)
             run_title.font.italic = True
             run_title.font.color.rgb = RGBColor(100, 100, 100)
-            
-            # Setup Footer
+
+            # Thin separator line below header table
+            sep_p = header.add_paragraph()
+            self.add_bottom_border_to_paragraph(sep_p, color_hex="CCCCCC", sz=4)
+            sep_p.paragraph_format.space_before = Pt(2)
+            sep_p.paragraph_format.space_after = Pt(0)
+
+            # ── FOOTER ────────────────────────────────────────────────────────
             footer = section.footer
             footer.is_linked_to_previous = False
-            for p in footer.paragraphs:
-                p.text = ""
+
+            # Clear footer content
+            ftr_element = footer._element
+            for child in list(ftr_element):
+                ftr_element.remove(child)
+
+            ftr_p_xml = OxmlElement('w:p')
+            ftr_element.append(ftr_p_xml)
+
             p_foot = footer.paragraphs[0]
-            p_foot.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            
-            run_foot_prefix = p_foot.add_run("Page ")
-            run_foot_prefix.font.name = font_name
-            run_foot_prefix.font.size = Pt(8.5)
-            
-            self.add_page_number_to_run(p_foot.add_run())
-            
-            run_mid = p_foot.add_run(" of ")
-            run_mid.font.name = font_name
-            run_mid.font.size = Pt(8.5)
-            
-            self.add_total_pages_to_run(p_foot.add_run())
+
+            # Left: Company name
+            p_foot.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+            # Use a two-column table for footer: company left, page number right
+            ftr_table = footer.add_table(rows=1, cols=2, width=Inches(6.5))
+            ftr_table.autofit = False
+
+            ftr_tblPr = ftr_table._tbl.tblPr
+            ftr_borders = OxmlElement('w:tblBorders')
+            for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+                b = OxmlElement(f'w:{border_name}')
+                b.set(qn('w:val'), 'none')
+                ftr_borders.append(b)
+            ftr_tblPr.append(ftr_borders)
+
+            ftr_table.columns[0].width = Inches(3.25)
+            ftr_table.columns[1].width = Inches(3.25)
+
+            company = self.style_config.get("company_name", "")
+            p_left = ftr_table.cell(0, 0).paragraphs[0]
+            p_left.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            r_company = p_left.add_run(company)
+            r_company.font.name = font_name
+            r_company.font.size = Pt(8)
+            r_company.font.color.rgb = RGBColor(130, 130, 130)
+
+            p_right = ftr_table.cell(0, 1).paragraphs[0]
+            p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            r_pre = p_right.add_run("Page ")
+            r_pre.font.name = font_name
+            r_pre.font.size = Pt(8)
+            r_pre.font.color.rgb = RGBColor(100, 100, 100)
+            self.add_page_number_to_run(p_right.add_run())
+            r_mid = p_right.add_run(" of ")
+            r_mid.font.name = font_name
+            r_mid.font.size = Pt(8)
+            r_mid.font.color.rgb = RGBColor(100, 100, 100)
+            self.add_total_pages_to_run(p_right.add_run())
+
 
     def set_cell_background(self, cell, fill_hex: str):
         """Set cell background shading XML."""

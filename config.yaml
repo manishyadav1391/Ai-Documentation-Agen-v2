@@ -22,10 +22,11 @@ render:
   region_stroke_width: 3
   callout_border_width: 2
 theme:
-  font_name: Arial
+  font_name: Georgia
   primary_color: 1B365D
   secondary_color: D97706
   text_color: '333333'
   logo_path: C:/Users/stadmin/Downloads/National-Emblem-of-India.jpg
-  company_name: OrangeHrms
+  company_name: orangehrms
   subtitle: Comprehensive User Guide & Technical Documentation
+  app_name: OrangeHRM Portal

@@ -85,21 +85,25 @@ class Provider(ABC):
         ...
 
     def generate_labels(
-        self, regions: List[Dict[str, Any]]
+        self, regions: List[Dict[str, Any]],
+        app_name: str = "", page_title: str = "", breadcrumb: str = ""
     ) -> List[Dict[str, Any]]:
-        """Accepts detected regions and returns them with a ``label`` key added."""
+        """Accepts detected regions and returns them with ``label`` (and optional ``screen_title``) keys added."""
         prompt = load_prompt(
             "label_regions",
             regions_json=self._to_json(regions),
+            app_name=app_name or "Enterprise Application",
+            page_title=page_title or "Unknown Page",
+            breadcrumb=breadcrumb or "",
         )
         from llm_ui import request_llm_processing
         from config import get_config
         cfg = get_config()
-        
+
         result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=True)
         if result is None:
             raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
-            
+
         merged_regions = []
         for i, item in enumerate(regions):
             merged = dict(item)
@@ -107,6 +111,9 @@ class Provider(ABC):
                 entry = result[i]
                 if isinstance(entry, dict):
                     merged["label"] = entry.get("label", "")
+                    # Only the first item carries a screen_title suggestion
+                    if i == 0:
+                        merged["screen_title"] = entry.get("screen_title", "")
                 else:
                     merged["label"] = str(entry)
             else:
@@ -115,21 +122,25 @@ class Provider(ABC):
         return merged_regions
 
     def generate_field_descriptions(
-        self, fields: List[Dict[str, Any]]
+        self, fields: List[Dict[str, Any]],
+        app_name: str = "", page_title: str = "", screen_name: str = ""
     ) -> List[Dict[str, Any]]:
         """Accepts form fields and returns them with a ``description`` key added."""
         prompt = load_prompt(
             "describe_fields",
             fields_json=self._to_json(fields),
+            app_name=app_name or "Enterprise Application",
+            page_title=page_title or "Unknown Page",
+            screen_name=screen_name or page_title or "Unknown Screen",
         )
         from llm_ui import request_llm_processing
         from config import get_config
         cfg = get_config()
-        
+
         result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=True)
         if result is None:
             raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
-            
+
         merged_fields = []
         for i, item in enumerate(fields):
             merged = dict(item)
@@ -144,20 +155,28 @@ class Provider(ABC):
             merged_fields.append(merged)
         return merged_fields
 
-    def generate_procedure_prose(self, screens: List[Dict[str, Any]]) -> str:
+    def generate_procedure_prose(
+        self, screens: List[Dict[str, Any]],
+        app_name: str = "", screen_name: str = "",
+        page_title: str = "", breadcrumb: str = ""
+    ) -> str:
         """Accepts a sequence of screen metadata and returns procedure prose."""
         prompt = load_prompt(
             "procedure_prose",
             screens_json=self._to_json(screens),
+            app_name=app_name or "Enterprise Application",
+            screen_name=screen_name or page_title or "Unknown Screen",
+            page_title=page_title or "Unknown Page",
+            breadcrumb=breadcrumb or "",
         )
         from llm_ui import request_llm_processing
         from config import get_config
         cfg = get_config()
-        
+
         result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=False)
         if result is None:
             raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
-            
+
         return result
 
     @staticmethod
@@ -165,17 +184,47 @@ class Provider(ABC):
         """Helper: pretty-print a Python object as compact JSON."""
         return json.dumps(data, indent=2, ensure_ascii=False)
 
-    def label_regions(self, regions: List[RegionForLabeling]) -> List[str]:
+    def label_regions(
+        self, regions: List[RegionForLabeling],
+        app_name: str = "", page_title: str = "", breadcrumb: str = ""
+    ) -> List[str]:
         raw_regions = []
         for r in regions:
             raw_regions.append({
                 "role": r.role,
                 "elements_contained": r.candidate_labels
             })
-        labeled_regions = self.generate_labels(raw_regions)
+        labeled_regions = self.generate_labels(
+            raw_regions, app_name=app_name, page_title=page_title, breadcrumb=breadcrumb
+        )
         return [r.get("label", "") for r in labeled_regions]
 
-    def describe_fields(self, fields: List[FieldForDescribing]) -> List[str]:
+    def label_regions_with_title(
+        self, regions: List[RegionForLabeling],
+        app_name: str = "", page_title: str = "", breadcrumb: str = ""
+    ) -> tuple:
+        """Like label_regions but also returns the suggested screen title.
+
+        Returns:
+            (labels: List[str], suggested_screen_title: str)
+        """
+        raw_regions = []
+        for r in regions:
+            raw_regions.append({
+                "role": r.role,
+                "elements_contained": r.candidate_labels
+            })
+        labeled_regions = self.generate_labels(
+            raw_regions, app_name=app_name, page_title=page_title, breadcrumb=breadcrumb
+        )
+        labels = [r.get("label", "") for r in labeled_regions]
+        suggested_title = labeled_regions[0].get("screen_title", "") if labeled_regions else ""
+        return labels, suggested_title
+
+    def describe_fields(
+        self, fields: List[FieldForDescribing],
+        app_name: str = "", page_title: str = "", screen_name: str = ""
+    ) -> List[str]:
         raw_fields = []
         for f in fields:
             raw_fields.append({
@@ -185,15 +234,21 @@ class Provider(ABC):
                 "placeholder": f.placeholder,
                 "pattern": f.validation
             })
-        described_fields = self.generate_field_descriptions(raw_fields)
+        described_fields = self.generate_field_descriptions(
+            raw_fields, app_name=app_name, page_title=page_title, screen_name=screen_name
+        )
         return [f.get("description", "") for f in described_fields]
 
-    def procedure_prose(self, actions: List[Dict[str, Any]], context: str) -> str:
-        screens = [{
-            "context": context,
-            "actions": actions
-        }]
-        return self.generate_procedure_prose(screens)
+    def procedure_prose(
+        self, actions: List[Dict[str, Any]], context: str,
+        app_name: str = "", screen_name: str = "",
+        page_title: str = "", breadcrumb: str = ""
+    ) -> str:
+        screens = [{"context": context, "actions": actions}]
+        return self.generate_procedure_prose(
+            screens, app_name=app_name, screen_name=screen_name,
+            page_title=page_title, breadcrumb=breadcrumb
+        )
 
 
 LLMProvider = Provider

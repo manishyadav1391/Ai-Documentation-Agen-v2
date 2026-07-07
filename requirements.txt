@@ -1,1 +1,6 @@
-ollama
+playwright
+python-docx
+pyautogui
+loguru
+rich
+ollama  

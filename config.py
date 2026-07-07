@@ -78,6 +78,7 @@ class BrandThemeConfig(BaseModel):
     logo_path: str = ""
     company_name: str = "Corporate Corporation"
     subtitle: str = "Comprehensive User Guide & Technical Documentation"
+    app_name: str = "Enterprise Application"
 
 
 class ProvidersConfig(BaseModel):
