@@ -1,0 +1,8 @@
+columns: [Button Name, Description]
+rows:
+  - name: Submit
+    description: Submit the form data
+  - name: Cancel
+    description: Cancel the current action
+  - name: Save
+    description: Save the current data

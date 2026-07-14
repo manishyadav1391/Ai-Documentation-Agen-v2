@@ -29,13 +29,17 @@ def get_provider_instance(config):
         return BrowserProvider()
 
 
-def run_pipeline():
+def run_pipeline(client_key: str = None):
     """Executes the linear pipeline architecture with multi-screen traversal."""
     print("=======================================================")
     print("      Documentation Automation Bot - Pipeline Start      ")
     print("=======================================================")
 
     config = load_config("config.yaml")
+    if client_key:
+        config.current_client = client_key
+        print(f"[Config Override] Active Client set to: {client_key}")
+        
     provider = get_provider_instance(config)
     bot_labeler = Labeler(provider)
 
@@ -92,6 +96,18 @@ def run_pipeline():
             bot_labeler.generate_screen_content(latest_session, screen_index)
             screen_index += 1
 
+    # Generate Module Introduction before Assembly
+    from manual_builder import load_manifest
+    try:
+        manifest = load_manifest(config.current_client, content_dir=config.content_dir)
+        module_name = manifest.system_name or manifest.client_display_name
+        module_num = 10 # Default fallback
+    except Exception:
+        module_name = "Case Form"
+        module_num = 10
+        
+    bot_labeler.generate_module_intro(latest_session, module_name, module_num)
+
     # 3. Assembly Phase
     print("\n--- PHASE 3: Module Assembly ---")
     assemble_module(latest_session)
@@ -101,4 +117,8 @@ def run_pipeline():
 
 
 if __name__ == "__main__":
-    run_pipeline()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--client", type=str, default=None, help="Overriding active client key")
+    args = parser.parse_args()
+    run_pipeline(client_key=args.client)

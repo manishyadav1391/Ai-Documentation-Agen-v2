@@ -1,5 +1,8 @@
 provider: browser
 default_template: corporate
+current_client: ncb
+content_dir: content
+styles_dir: styles
 sessions_dir: sessions
 providers:
   browser:

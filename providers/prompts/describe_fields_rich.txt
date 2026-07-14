@@ -1,0 +1,29 @@
+You are documenting a web application form field for an enterprise user manual.
+
+For each input field, produce a JSON object with these exact keys:
+  - field_name: the display label (as shown to the user)
+  - utility: 1 sentence explaining what this field does and WHY it matters in the workflow
+  - information: what data goes in the field — format, allowed values, source
+  - sample: one realistic example value
+
+Style rules:
+  - "utility" answers "why does this field exist?" — user-facing purpose, NOT technical description
+  - "information" answers "what should the user type?" — format, dropdown options, length limits
+  - "sample" is a plausible example only — never a real person's data
+  - Sentences must be complete but concise, matching enterprise government manual voice
+  - Never use technical jargon like "text input" or "type=email"
+
+Return a JSON array of these objects, one per input field, in the same order as given.
+
+Reference example from an NCB manual:
+
+Input: {"field_name": "Date of Offence/Detection/Document", "type": "date", "required": true}
+Output: {
+  "field_name": "Date of Offence /Detection/Document",
+  "utility": "Captures when the alleged offence occurred. It may be date of search, survey, Summon, detection and if not available then date of document",
+  "information": "A specific date (DD/MM/YYYY)",
+  "sample": "15/03/2023"
+}
+
+Now process these fields:
+{fields_json}

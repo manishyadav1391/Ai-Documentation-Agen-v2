@@ -429,18 +429,11 @@ class CorporateBuilder(DocumentBuilder):
             r_cap.font.color.rgb = RGBColor(100, 100, 100)
 
 
-        # Procedure Prose — parsed into structured sections
-        prose = content_data.get("procedure_prose", "")
-        if prose:
-            h2 = self.doc.add_heading(level=2)
-            r2 = h2.add_run("Procedure")
-            r2.font.name = self.font_name
-            r2.font.color.rgb = hex_to_rgb(self.secondary_hex)
+        # Structured screen documentation
+        screen_documentation = content_data.get("screen_documentation", {}) or {}
+        self._render_screen_documentation(screen_documentation)
 
-            self._render_structured_prose(prose)
-            self.doc.add_paragraph()
-
-        # Element Descriptions Table
+        # Legacy Element Descriptions Table (fallback only)
         fields = content_data.get("field_descriptions", [])
         if fields:
             h3 = self.doc.add_heading(level=2)
@@ -472,7 +465,6 @@ class CorporateBuilder(DocumentBuilder):
 
             for r_idx, field in enumerate(fields):
                 row_cells = table.add_row().cells
-                # Strip section prefix if present (e.g. "Login Form -> Username")
                 raw_name = field.get("field_name", "Unnamed Element")
                 display_name = raw_name.split(" -> ")[-1] if " -> " in raw_name else raw_name
                 row_cells[0].text = display_name
@@ -493,83 +485,73 @@ class CorporateBuilder(DocumentBuilder):
 
         self.doc.add_page_break()
 
-    def _render_structured_prose(self, prose: str):
-        """Parse the LLM-generated structured prose into properly styled document sections."""
-        import re
+    def _render_screen_documentation(self, documentation: Dict[str, Any]):
+        """Render structured screen documentation JSON into the Word document."""
+        if not documentation:
+            return
 
-        # Known section markers from the new prompt format
-        SECTIONS = ["PURPOSE:", "PREREQUISITES:", "STEPS:", "EXPECTED OUTCOME:", "NOTES:"]
-        SECTION_LABELS = {
-            "PURPOSE:": "Purpose",
-            "PREREQUISITES:": "Prerequisites",
-            "STEPS:": "Steps",
-            "EXPECTED OUTCOME:": "Expected Outcome",
-            "NOTES:": "Notes"
-        }
+        def add_section_heading(text: str):
+            h = self.doc.add_heading(level=2)
+            r = h.add_run(text)
+            r.font.name = self.font_name
+            r.font.color.rgb = hex_to_rgb(self.secondary_hex)
+            h.paragraph_format.space_after = Pt(6)
+            return h
 
-        current_section = None
-        in_prerequisites = False
-        in_steps = False
-
-        for raw_line in prose.split("\n"):
-            line = raw_line.strip()
-            if not line:
-                continue
-
-            # Check if this line opens a new section
-            matched_section = None
-            for marker in SECTIONS:
-                if line.upper().startswith(marker):
-                    matched_section = marker
-                    break
-
-            if matched_section:
-                current_section = matched_section
-                in_prerequisites = (matched_section == "PREREQUISITES:")
-                in_steps = (matched_section == "STEPS:")
-                label = SECTION_LABELS[matched_section]
-
-                if matched_section == "NOTES:":
-                    # Notes go into a callout — grab remaining text on same line if any
-                    remaining = line[len(matched_section):].strip()
-                    if remaining:
-                        self._render_callout_line(remaining)
+        def add_bullet_list(items: list[str]):
+            for item in items:
+                if not item:
                     continue
-
-                # Sub-section heading
-                h = self.doc.add_heading(level=3)
-                r = h.add_run(label)
-                r.font.name = self.font_name
-                r.font.size = Pt(11)
-                r.font.color.rgb = hex_to_rgb(self.primary_hex)
-                h.paragraph_format.space_before = Pt(8)
-                h.paragraph_format.space_after = Pt(4)
-
-                # Inline text after section header (e.g. "PURPOSE: Manage users")
-                inline = line[len(matched_section):].strip()
-                if inline:
-                    self._add_body_paragraph(inline)
-                continue
-
-            # Line content within a section
-            if current_section == "NOTES:":
-                self._render_callout_line(line)
-            elif in_prerequisites and line.startswith("-"):
-                p = self.doc.add_paragraph(line.lstrip("- "), style="List Bullet")
+                p = self.doc.add_paragraph(item, style="List Bullet")
                 if p.runs:
                     p.runs[0].font.name = self.font_name
                     p.runs[0].font.size = Pt(10)
-            elif in_steps and re.match(r"^\d+\.", line):
-                # Numbered step — use List Number style for proper formatting
-                step_text = re.sub(r"^\d+\.\s*", "", line).strip()
-                p = self.doc.add_paragraph(style="List Number")
-                r = p.add_run(step_text)
-                r.font.name = self.font_name
-                r.font.size = Pt(10)
-            elif line.lower().startswith(("note:", "warning:", "important:")):
-                self._render_callout_line(line)
-            else:
-                self._add_body_paragraph(line)
+                    p.runs[0].font.color.rgb = hex_to_rgb(self.text_hex)
+
+        if documentation.get("navigation"):
+            add_section_heading("Navigation")
+            self._add_body_paragraph(documentation["navigation"])
+
+        if documentation.get("overview"):
+            add_section_heading("Overview")
+            self._add_body_paragraph(documentation["overview"])
+
+        if documentation.get("search_filters"):
+            add_section_heading("Search Criteria")
+            add_bullet_list(documentation["search_filters"])
+
+        if documentation.get("buttons"):
+            add_section_heading("Buttons")
+            add_bullet_list(documentation["buttons"])
+
+        if documentation.get("table_columns"):
+            add_section_heading("Table Columns")
+            add_bullet_list(documentation["table_columns"])
+
+        if documentation.get("form_fields"):
+            add_section_heading("Form Fields")
+            add_bullet_list(documentation["form_fields"])
+
+        if documentation.get("tabs"):
+            add_section_heading("Tabs")
+            add_bullet_list(documentation["tabs"])
+
+        if documentation.get("additional_features"):
+            add_section_heading("Additional Features")
+            add_bullet_list(documentation["additional_features"])
+
+        if documentation.get("summary"):
+            add_section_heading("Summary")
+            self._add_body_paragraph(documentation["summary"])
+
+    def _add_body_paragraph(self, text: str):
+        """Adds a standard body text paragraph."""
+        p = self.doc.add_paragraph()
+        p.paragraph_format.line_spacing = 1.15
+        p.paragraph_format.space_after = Pt(6)
+        r = p.add_run(text)
+        r.font.name = self.font_name
+        r.font.size = Pt(10.5)
 
     def _add_body_paragraph(self, text: str):
         """Adds a standard body text paragraph."""

@@ -1,0 +1,8 @@
+columns: [Icon Name, Description]
+rows:
+  - name: Edit
+    description: Edit the record
+  - name: Delete
+    description: Delete the record
+  - name: View
+    description: View record details

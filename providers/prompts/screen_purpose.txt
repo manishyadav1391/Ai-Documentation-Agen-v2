@@ -1,0 +1,18 @@
+You are writing a one-sentence purpose statement for a screen in an enterprise user manual.
+
+Given the screen's URL, title, breadcrumb, and detected regions, produce a single sentence explaining what this screen is FOR — what a user comes here to accomplish.
+
+Rules:
+  - Exactly one sentence, 15-30 words
+  - Present tense, active voice
+  - Start with the screen's function (not "This screen...")
+  - Voice must match the reference examples
+
+Reference examples from the NCB manual:
+  - "Add Case feature is designed for authorized law enforcement agencies (LEAs) to register new cases related to economic offences within India's Central Economic Intelligence Bureau (CEIB) framework."
+  - "The Case Form module in NEOR enables users to enter offence-related case data."
+
+Return ONLY the sentence, no preamble.
+
+Screen context:
+{screen_context_json}

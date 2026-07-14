@@ -1,0 +1,3 @@
+A life cycle of NCB case in NEOR database case starts from entering the details of Search & Seizure/Incident Report by Narcotics Control Bureau. This is followed Investigation Report/Complaint, Trial & Conviction. Subsequently, the case may proceed to high-court & supreme court.
+
+NEOR has the capability to capture important details of each case processed by NCB viz search & seizure, investigation report/complaint, trial & conviction, high Court and supreme Court. This enables capturing and comprehensive tracking of a case from its initiation to its final resolution, ensuring quick and easy access to records archived whenever needed. NEOR acts as a one-stop portal for recording, tracking and retrieval of case information, aiding in data driven decision making.

@@ -102,11 +102,23 @@ class Config(BaseModel):
     name of the environment variable that holds the key is stored.
     """
     provider: Literal["browser", "anthropic", "openai_compat", "ollama"] = "browser"
-    default_template: str = "ncd"
+    default_template: str = "corporate"
+    current_client: str = "ncb"
+    content_dir: str = "content"
+    styles_dir: str = "styles"
     sessions_dir: str = "sessions"
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     render: RenderConfig = Field(default_factory=RenderConfig)
     theme: BrandThemeConfig = Field(default_factory=BrandThemeConfig)
+
+    def get_current_client(self) -> str:
+        """Return the active client identifier."""
+        return self.current_client
+
+    def validate_client_exists(self, client_key: str) -> bool:
+        """Validate if the client's manifest exists."""
+        manifest_path = Path(self.content_dir) / client_key / "manifest.yaml"
+        return manifest_path.exists()
 
     @property
     def sessions_path(self) -> Path:

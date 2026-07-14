@@ -155,6 +155,120 @@ class Provider(ABC):
             merged_fields.append(merged)
         return merged_fields
 
+    def generate_field_descriptions_rich(
+        self, fields: List[Dict[str, Any]],
+        app_name: str = "", page_title: str = "", screen_name: str = ""
+    ) -> List[Dict[str, Any]]:
+        """Accepts form fields and returns them as a list of dictionaries with 4 columns: field_name, utility, information, sample."""
+        prompt = load_prompt(
+            "describe_fields_rich",
+            fields_json=self._to_json(fields),
+            app_name=app_name or "Enterprise Application",
+            page_title=page_title or "Unknown Page",
+            screen_name=screen_name or page_title or "Unknown Screen",
+        )
+        from llm_ui import request_llm_processing
+        from config import get_config
+        cfg = get_config()
+
+        result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=True)
+        if result is None:
+            raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
+
+        merged_fields = []
+        for i, item in enumerate(fields):
+            merged = dict(item)
+            if i < len(result):
+                entry = result[i]
+                if isinstance(entry, dict):
+                    merged["field_name"] = entry.get("field_name", item.get("accessible_name", ""))
+                    merged["utility"] = entry.get("utility", "")
+                    merged["information"] = entry.get("information", "")
+                    merged["sample"] = entry.get("sample", "")
+                else:
+                    merged["field_name"] = item.get("accessible_name", "")
+                    merged["utility"] = str(entry)
+                    merged["information"] = "Data input"
+                    merged["sample"] = "Sample text"
+            else:
+                merged["field_name"] = item.get("accessible_name", "")
+                merged["utility"] = ""
+                merged["information"] = ""
+                merged["sample"] = ""
+            merged_fields.append(merged)
+        return merged_fields
+
+    def generate_screen_purpose(
+        self, screen_context: Dict[str, Any]
+    ) -> str:
+        """Generates a one-sentence purpose statement for a screen."""
+        prompt = load_prompt(
+            "screen_purpose",
+            screen_context_json=self._to_json(screen_context)
+        )
+        from llm_ui import request_llm_processing
+        from config import get_config
+        cfg = get_config()
+
+        result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=False)
+        if result is None:
+            raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
+
+        return result.strip()
+
+    def generate_module_intro(
+        self, module_name: str, screens: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Generates the module introduction paragraph and feature bullet list."""
+        prompt = load_prompt(
+            "module_intro",
+            module_name=module_name,
+            screens_json=self._to_json(screens)
+        )
+        from llm_ui import request_llm_processing
+        from config import get_config
+        cfg = get_config()
+
+        result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=True)
+        if result is None:
+            raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
+
+        if isinstance(result, dict):
+            return result
+        return {"intro": "", "features": []}
+
+    def generate_screen_documentation(
+        self,
+        controls: Dict[str, Any],
+        app_name: str = "",
+        page_title: str = "",
+        screen_name: str = "",
+        breadcrumb: str = "",
+        screen_type: str = ""
+    ) -> Dict[str, Any]:
+        """Generates structured screen documentation JSON from grouped controls."""
+        prompt = load_prompt(
+            "screen_documentation",
+            controls_json=self._to_json(controls),
+            app_name=app_name or "Enterprise Application",
+            page_title=page_title or "Unknown Page",
+            screen_name=screen_name or page_title or "Unknown Screen",
+            breadcrumb=breadcrumb or "",
+            screen_type=screen_type or "unknown"
+        )
+        from llm_ui import request_llm_processing
+        from config import get_config
+        cfg = get_config()
+
+        result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=True)
+        if result is None:
+            raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
+
+        if isinstance(result, dict):
+            return result
+
+        return {}
+
     def generate_procedure_prose(
         self, screens: List[Dict[str, Any]],
         app_name: str = "", screen_name: str = "",
@@ -238,6 +352,23 @@ class Provider(ABC):
             raw_fields, app_name=app_name, page_title=page_title, screen_name=screen_name
         )
         return [f.get("description", "") for f in described_fields]
+
+    def describe_fields_rich(
+        self, fields: List[FieldForDescribing],
+        app_name: str = "", page_title: str = "", screen_name: str = ""
+    ) -> List[Dict[str, Any]]:
+        raw_fields = []
+        for f in fields:
+            raw_fields.append({
+                "accessible_name": f.name,
+                "type": f.type,
+                "required": f.required,
+                "placeholder": f.placeholder,
+                "pattern": f.validation
+            })
+        return self.generate_field_descriptions_rich(
+            raw_fields, app_name=app_name, page_title=page_title, screen_name=screen_name
+        )
 
     def procedure_prose(
         self, actions: List[Dict[str, Any]], context: str,

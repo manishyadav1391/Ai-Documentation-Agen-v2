@@ -1,0 +1,72 @@
+page:
+  size: A4
+  margin_top_cm: 2.5
+  margin_bottom_cm: 2.5
+  margin_left_cm: 2.5
+  margin_right_cm: 2.6
+fonts:
+  body_family: Segoe UI
+  body_size_pt: 11.0
+  heading_family: Segoe UI
+colors:
+  primary: 1F3864
+  secondary: 2E75B6
+  tertiary: C00000
+  accent: '400040'
+  table_header_bg: 1F3864
+  table_header_fg: FFFFFF
+  table_zebra: F2F2F2
+  body_text: '000000'
+  muted: '595959'
+headings:
+  h1_size_pt: 24
+  h2_size_pt: 13
+  h3_size_pt: 14
+  h4_size_pt: 12
+  h1_bold: true
+  h1_color: primary
+  h2_bold: true
+  h2_color: primary
+  h3_bold: true
+  h3_color: primary
+  h4_bold: true
+  h4_color: primary
+numbering:
+  figure_prefix: Figure
+  figure_format: '{module}-{fig}'
+  table_prefix: Table
+  table_format: '{module}-{tbl}'
+figures:
+  caption_position: below
+  caption_size_pt: 10
+tables:
+  caption_position: below
+  zebra_striping: true
+  zebra_color: table_zebra
+bullets:
+  level_0_marker: •
+  level_1_marker: ◦
+  level_2_marker: ▪
+  indent_cm: 0.5
+cover:
+  layout: centered
+  accent_bar_color: primary
+  title_size_pt: 32
+  version_position: bottom_right
+revision_history:
+  header_bg: table_header_bg
+  header_fg: table_header_fg
+  border_color: CCCCCC
+toc:
+  title: Table of contents
+  max_depth: 3
+  dot_leaders: true
+logo:
+  path: ''
+  header_left: true
+  size_cm: 2
+footer:
+  show_page_numbers: true
+  page_number_format: Page {current} of {total}
+  page_number_color: muted
+  center_text: ''

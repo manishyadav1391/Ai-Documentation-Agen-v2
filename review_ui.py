@@ -100,6 +100,49 @@ class ReviewWindow:
         tk.Label(top_bar, text="(Used as section heading in the manual)",
                  font=("Arial", 9, "italic"), bg="#1E293B", fg="#94A3B8").pack(side=tk.LEFT)
 
+        # ── Meta Bar: Purpose and Path Breadcrumb ─────────────────────────────
+        meta_bar = tk.Frame(self.root, bg="#2E3A4E", pady=6)
+        meta_bar.pack(fill=tk.X, side=tk.TOP)
+
+        tk.Label(meta_bar, text="Purpose:", font=("Arial", 10, "bold"),
+                 bg="#2E3A4E", fg="white").pack(side=tk.LEFT, padx=(12, 4))
+
+        # Load purpose from content.json
+        self._saved_purpose = ""
+        self.content_json_path = self.session_dir / f"screen_{self.screen_index}_content.json"
+        if self.content_json_path.exists():
+            try:
+                with self.content_json_path.open("r", encoding="utf-8") as f:
+                    content_data = json.load(f)
+                self._saved_purpose = content_data.get("purpose", "")
+            except Exception:
+                pass
+
+        self._purpose_var = tk.StringVar(value=self._saved_purpose)
+        purpose_entry = tk.Entry(meta_bar, textvariable=self._purpose_var,
+                                 width=65, font=("Arial", 10))
+        purpose_entry.pack(side=tk.LEFT, padx=(0, 12))
+
+        tk.Label(meta_bar, text="Path Preview:", font=("Arial", 10, "bold"),
+                 bg="#2E3A4E", fg="white").pack(side=tk.LEFT, padx=(12, 4))
+
+        self.nav_trail = []
+        if self.meta_path.exists():
+            try:
+                with self.meta_path.open("r", encoding="utf-8") as f:
+                    meta_data = json.load(f)
+                self.nav_trail = meta_data.get("nav_trail", [])
+            except Exception:
+                pass
+
+        self._path_preview_var = tk.StringVar()
+        self.update_path_preview()
+        self._screen_name_var.trace_add("write", self.on_screen_name_change)
+
+        path_label = tk.Label(meta_bar, textvariable=self._path_preview_var, font=("Arial", 10, "italic"),
+                              bg="#2E3A4E", fg="#CBD5E1")
+        path_label.pack(side=tk.LEFT, padx=(0, 12))
+
         # ── Left Panel: Region List & Controls ───────────────────────────────
         left_frame = tk.Frame(self.root, width=460, bg="#F8FAFC")
         left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 4), pady=10)
@@ -606,14 +649,27 @@ class ReviewWindow:
         else:
             messagebox.showinfo("Preview", "Annotation file could not be generated.")
 
+    def update_path_preview(self):
+        screen_name = self._screen_name_var.get().strip() or f"Screen {self.screen_index}"
+        trail = list(self.nav_trail) if self.nav_trail else []
+        if screen_name not in trail:
+            trail.append(screen_name)
+        self._path_preview_var.set(" >> ".join(trail))
+
+    def on_screen_name_change(self, *args):
+        self.update_path_preview()
+
     def save_temp_json(self):
-        """Save current edits to final JSON and persist screen name to meta."""
+        """Save current edits to final JSON and persist screen name, purpose, path to meta & content."""
         final_data = [r for r in self.regions_data if not r.get("deleted")]
         with self.final_json_path.open("w", encoding="utf-8") as f:
             json.dump(final_data, f, indent=2)
 
-        # Persist the screen name entered by the user
         screen_name = self._screen_name_var.get().strip()
+        purpose = self._purpose_var.get().strip()
+        path = self._path_preview_var.get().strip()
+
+        # Update meta.json
         if self.meta_path.exists():
             try:
                 with self.meta_path.open("r", encoding="utf-8") as f:
@@ -621,6 +677,20 @@ class ReviewWindow:
                 meta["screen_name"] = screen_name
                 with self.meta_path.open("w", encoding="utf-8") as f:
                     json.dump(meta, f, indent=2)
+            except Exception:
+                pass
+
+        # Update content.json
+        content_path = self.session_dir / f"screen_{self.screen_index}_content.json"
+        if content_path.exists():
+            try:
+                with content_path.open("r", encoding="utf-8") as f:
+                    content_data = json.load(f)
+                content_data["screen_name"] = screen_name
+                content_data["purpose"] = purpose
+                content_data["path"] = path
+                with content_path.open("w", encoding="utf-8") as f:
+                    json.dump(content_data, f, indent=2)
             except Exception:
                 pass
 

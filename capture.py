@@ -142,7 +142,7 @@ def extract_dom_elements(page: Page) -> list[dict]:
     return page.evaluate(js_script)
 
 def extract_page_context(page: Page) -> dict:
-    """Extracts high-level page metadata: title, H1, visible body summary."""
+    """Extracts high-level page metadata: title, H1, visible body summary, nav trail, siblings."""
     js_context = """
     () => {
         const h1 = document.querySelector('h1');
@@ -157,29 +157,66 @@ def extract_page_context(page: Page) -> dict:
         const activeTab = document.querySelector('[role="tab"][aria-selected="true"], .nav-tab.active, .tab-item.active');
         const activeTabText = activeTab ? activeTab.innerText.trim() : '';
 
+        // Calculate navigation trail
+        const navTrail = [];
+        if (breadcrumbText) {
+            breadcrumbText.split(' > ').forEach(part => {
+                const cleanPart = part.trim();
+                if (cleanPart && !navTrail.includes(cleanPart)) {
+                    navTrail.push(cleanPart);
+                }
+            });
+        }
+        
+        // Find visible siblings of the active menu link
+        const siblingScreens = [];
+        const activeMenu = document.querySelector('.sidebar .active, .menu .active')?.closest('ul, ol');
+        if (activeMenu) {
+            activeMenu.querySelectorAll('a').forEach(link => {
+                const text = link.innerText.trim();
+                if (text && !siblingScreens.includes(text)) {
+                    siblingScreens.push(text);
+                }
+            });
+        }
+
         return {
             page_title: pageTitle,
             h1_text: h1Text,
             breadcrumb: breadcrumbText,
             active_tab: activeTabText,
-            url: window.location.href
+            url: window.location.href,
+            nav_trail: navTrail,
+            sibling_screens: siblingScreens
         };
     }
     """
     try:
         return page.evaluate(js_context)
     except Exception:
-        return {"page_title": page.title(), "h1_text": "", "breadcrumb": "", "active_tab": "", "url": page.url}
+        return {"page_title": page.title(), "h1_text": "", "breadcrumb": "", "active_tab": "", "url": page.url, "nav_trail": [], "sibling_screens": []}
 
-def capture_screen(page: Page, session_dir: Path, screen_index: int):
-    """Executes the capture sequence for a single screen."""
-    print(f"\n[Capture Triggered] Processing Screen {screen_index}...")
+def capture_screen(page: Page, session_dir: Path, screen_index: int, state_of: int = None, state_label: str = None):
+    """Executes the capture sequence for a single screen or screen state."""
+    if state_of is not None:
+        # Determine the next state index for the parent screen
+        existing_states = list(session_dir.glob(f"screen_{state_of}_state_*_elements.json"))
+        state_idx = len(existing_states) + 1
+        img_name = f"screen_{state_of}_state_{state_idx}.png"
+        elements_name = f"screen_{state_of}_state_{state_idx}_elements.json"
+        meta_name = f"screen_{state_of}_state_{state_idx}_meta.json"
+        print(f"\n[State Capture Triggered] Processing State {state_idx} for Screen {state_of}...")
+    else:
+        img_name = f"screen_{screen_index}.png"
+        elements_name = f"screen_{screen_index}_elements.json"
+        meta_name = f"screen_{screen_index}_meta.json"
+        print(f"\n[Capture Triggered] Processing Screen {screen_index}...")
     
     force_render_lazy_content(page)
     
-    img_path = session_dir / f"screen_{screen_index}.png"
-    elements_path = session_dir / f"screen_{screen_index}_elements.json"
-    meta_path = session_dir / f"screen_{screen_index}_meta.json"
+    img_path = session_dir / img_name
+    elements_path = session_dir / elements_name
+    meta_path = session_dir / meta_name
     
     page.screenshot(path=img_path, full_page=True)
     
@@ -197,14 +234,21 @@ def capture_screen(page: Page, session_dir: Path, screen_index: int):
         "active_tab": context.get("active_tab", ""),
         "viewport": page.viewport_size,
         "timestamp": datetime.now().isoformat(),
-        "screen_name": ""   # placeholder — filled by review UI
+        "screen_name": "",   # placeholder — filled by review UI
+        "nav_trail": context.get("nav_trail", []),
+        "sibling_screens": context.get("sibling_screens", []),
+        "state_of": state_of,
+        "state_label": state_label
     }
     with meta_path.open("w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
         
     interactive_count = sum(1 for e in elements if e.get("element_class") == "interactive")
     static_count = len(elements) - interactive_count
-    print(f"Captured {interactive_count} interactive + {static_count} static elements for Screen {screen_index}.")
+    if state_of is not None:
+        print(f"Captured state {state_idx} ({interactive_count} interactive + {static_count} static elements) for Screen {state_of}.")
+    else:
+        print(f"Captured screen {screen_index} ({interactive_count} interactive + {static_count} static elements).")
 
 def setup_mouse_triggers(page: Page, session_dir: Path, app_state: dict):
     """Injects a smart global mouse listener inside the browser context."""
@@ -212,12 +256,16 @@ def setup_mouse_triggers(page: Page, session_dir: Path, app_state: dict):
     def python_capture():
         app_state["capture_requested"] = True
 
+    def python_state_capture():
+        app_state["state_capture_requested"] = True
+
     def python_quit():
         print("\n[Quit Triggered] Double middle-click detected. Ending capture session...")
         app_state["quit"] = True
 
-    # Expose both Python functions to the browser
+    # Expose Python functions to the browser
     page.expose_function("triggerPythonCapture", python_capture)
+    page.expose_function("triggerPythonStateCapture", python_state_capture)
     page.expose_function("triggerPythonQuit", python_quit)
 
     # JS logic: Uses a 400ms timer to differentiate single vs double clicks
@@ -236,7 +284,11 @@ def setup_mouse_triggers(page: Page, session_dir: Path, app_state: dict):
             } else {
                 // Timer is not active: wait 400ms to see if it's a SINGLE click
                 middleClickTimer = setTimeout(() => {
-                    window.triggerPythonCapture();
+                    if (e.shiftKey) {
+                        window.triggerPythonStateCapture();
+                    } else {
+                        window.triggerPythonCapture();
+                    }
                     middleClickTimer = null;
                 }, 400); 
             }
@@ -252,7 +304,12 @@ def run_capture_session(start_url: str = "https://google.com"):
     session_dir = setup_session_dir()
     
     # We use a state dictionary so the exposed functions can modify these values
-    app_state = {"index": 1, "quit": False, "capture_requested": False}
+    app_state = {
+        "index": 1,
+        "quit": False,
+        "capture_requested": False,
+        "state_capture_requested": False
+    }
     
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False, args=["--start-maximized"])
@@ -265,6 +322,7 @@ def run_capture_session(start_url: str = "https://google.com"):
         print("\n=======================================================")
         print("Browser Active. Controls:")
         print("  * SINGLE Middle-Click: Capture the current screen.")
+        print("  * SHIFT + Middle-Click: Capture as additional state of last screen.")
         print("  * DOUBLE Middle-Click: Quit and process the manual.")
         print("=======================================================")
         
@@ -274,6 +332,17 @@ def run_capture_session(start_url: str = "https://google.com"):
                 app_state["capture_requested"] = False
                 capture_screen(page, session_dir, app_state["index"])
                 app_state["index"] += 1
+                
+            elif app_state["state_capture_requested"]:
+                app_state["state_capture_requested"] = False
+                parent_idx = app_state["index"] - 1
+                if parent_idx >= 1:
+                    # Retrieve prompt or default label
+                    state_lbl = f"State {len(list(session_dir.glob(f'screen_{parent_idx}_state_*_elements.json'))) + 1}"
+                    capture_screen(page, session_dir, app_state["index"], state_of=parent_idx, state_label=state_lbl)
+                else:
+                    print("Cannot capture state: No main screens have been captured yet.")
+                    
             # Check every 100ms. This prevents the terminal from hanging.
             page.wait_for_timeout(100) 
                 

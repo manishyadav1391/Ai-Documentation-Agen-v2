@@ -1,0 +1,36 @@
+columns: [Buttons, Button Name, Description]
+rows:
+  - name: Radio Button
+    description: Selects an option
+  - name: Dropdown
+    description: Presents multiple options to choose
+  - name: Cancel
+    description: Cancel the decision
+  - name: Next
+    description: Go to next page
+  - name: Save as draft
+    description: Save the filled data as draft
+  - name: Clear
+    description: Clear or cancel filled data
+  - name: Previous
+    description: To Go back on previous page
+  - name: Save button
+    description: Save details
+  - name: Add more Details
+    description: Add more information
+  - name: Hide Details
+    description: Hide the displayed information
+  - name: Check Box
+    description: Check mark to select options
+  - name: Slide
+    description: Slide Forward or Backward
+  - name: Add
+    description: To save the data
+  - name: Preview & submit
+    description: Preview the details & submit them
+  - name: Choose File
+    description: For Uploading the files
+  - name: Back
+    description: To Go back
+  - name: Submit
+    description: Submit the data

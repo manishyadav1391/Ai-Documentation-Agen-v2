@@ -12,6 +12,8 @@ if str(root_dir) not in sys.path:
 from main import run_pipeline
 from master_assembler import assemble_master_manual
 from config import get_config, save_config, reload_config
+from ui.style_editor import StyleEditorDialog
+from manual_builder.manifest_loader import get_available_clients
 
 class StyleConfigDialog(tk.Toplevel):
     def __init__(self, parent, ui_manager):
@@ -217,38 +219,57 @@ class StyleConfigDialog(tk.Toplevel):
 class LauncherUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Documentation Automation Bot")
-        self.root.geometry("620x580")
+        self.root.title("Documentation Automation Bot v2")
+        self.root.geometry("680x620")
         self.root.resizable(False, False)
         
+        self.config = get_config()
+        self.client_key = self.config.current_client
+
         # Title
-        tk.Label(root, text="Documentation Automation Bot", font=("Arial", 16, "bold"), fg="#0F172A").pack(pady=15)
+        tk.Label(root, text="Documentation Automation Bot v2", font=("Arial", 16, "bold"), fg="#1F3864").pack(pady=15)
         
-        # Brand & Style Configurator
-        brand_frame = tk.LabelFrame(root, text="Brand Customization Options", padx=12, pady=10)
-        brand_frame.pack(fill=tk.X, padx=20, pady=5)
+        # Client Selector & Customization Frame
+        client_frame = tk.LabelFrame(root, text="Active Client Configuration", padx=12, pady=10)
+        client_frame.pack(fill=tk.X, padx=20, pady=5)
+
+        tk.Label(client_frame, text="Select Client:").grid(row=0, column=0, sticky="w", pady=5)
         
-        self.brand_label = tk.Label(brand_frame, text="", font=("Arial", 9), fg="#475569", anchor="w", justify=tk.LEFT)
-        self.brand_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
-        tk.Button(brand_frame, text="Configure Brand...", bg="#F1F5F9", font=("Arial", 9, "bold"), command=self.open_style_config).pack(side=tk.RIGHT, padx=5)
+        self.client_list = get_available_clients()
+        self.client_var = tk.StringVar(value=self.client_key)
+        self.client_combo = ttk.Combobox(client_frame, textvariable=self.client_var, values=self.client_list, state="readonly", width=18)
+        self.client_combo.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        self.client_combo.bind("<<ComboboxSelected>>", self.on_client_change)
+
+        tk.Button(client_frame, text="New Client...", bg="#F0FDF4", command=self.new_client).grid(row=0, column=2, sticky="w", padx=5, pady=5)
+
+        # Style & Content Config Buttons
+        ctrl_btn_frame = tk.Frame(client_frame)
+        ctrl_btn_frame.grid(row=1, column=0, columnspan=3, sticky="w", pady=10)
+
+        tk.Button(ctrl_btn_frame, text="Configure Formatting...", bg="#EFF6FF", font=("Arial", 9, "bold"), command=self.open_style_editor).pack(side=tk.LEFT, padx=5)
+        tk.Button(ctrl_btn_frame, text="Configure Content Files...", bg="#F5F5F5", font=("Arial", 9), command=self.open_content_folder).pack(side=tk.LEFT, padx=5)
+
+        # Summary Display Label
+        self.brand_label = tk.Label(client_frame, text="", font=("Arial", 9), fg="#475569", anchor="w", justify=tk.LEFT)
+        self.brand_label.grid(row=2, column=0, columnspan=3, sticky="w", pady=5)
         self.refresh_brand_summary()
 
         # Section 1: Record New Module
         record_frame = tk.LabelFrame(root, text="1. Capture & Process Module", padx=12, pady=10)
         record_frame.pack(fill=tk.X, padx=20, pady=8)
         
-        tk.Label(record_frame, text="Record screens, detect UI elements, and generate localized descriptions.", font=("Arial", 9), fg="#64748B", wraplength=500, justify=tk.LEFT).pack(anchor="w", pady=2)
-        tk.Button(record_frame, text="Record New Module", bg="#3B82F6", fg="white", font=("Arial", 10, "bold"), command=self.start_recording).pack(pady=5)
+        tk.Label(record_frame, text="Record screens (Middle-Click), add additional states (Shift+Middle-Click), and process.", font=("Arial", 9), fg="#64748B", wraplength=600, justify=tk.LEFT).pack(anchor="w", pady=2)
+        tk.Button(record_frame, text="Record New Module", bg="#2563EB", fg="white", font=("Arial", 10, "bold"), command=self.start_recording).pack(pady=5)
         
         # Section 2: Assemble Master Manual
-        assemble_frame = tk.LabelFrame(root, text="2. Assemble Master Document", padx=12, pady=10)
+        assemble_frame = tk.LabelFrame(root, text="2. Compile Master Client Manual", padx=12, pady=10)
         assemble_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=8)
         
-        tk.Label(assemble_frame, text="Select recorded modules in their manual order to compile the final deliverable.", font=("Arial", 9), fg="#64748B", wraplength=500, justify=tk.LEFT).pack(anchor="w", pady=2)
+        tk.Label(assemble_frame, text="Select recorded modules in order to compile the final deliverable.", font=("Arial", 9), fg="#64748B", wraplength=600, justify=tk.LEFT).pack(anchor="w", pady=2)
         
         # Listbox for sessions
-        self.session_listbox = tk.Listbox(assemble_frame, selectmode=tk.MULTIPLE, height=6, font=("Arial", 9))
+        self.session_listbox = tk.Listbox(assemble_frame, selectmode=tk.MULTIPLE, height=5, font=("Arial", 9))
         self.session_listbox.pack(fill=tk.BOTH, expand=True, pady=5)
         
         self.refresh_sessions()
@@ -257,19 +278,97 @@ class LauncherUI:
         btn_frame.pack(fill=tk.X, pady=5)
         
         tk.Button(btn_frame, text="Refresh List", command=self.refresh_sessions).pack(side=tk.LEFT, padx=5)
-        tk.Button(btn_frame, text="Assemble Client Manual", bg="#10B981", fg="white", font=("Arial", 10, "bold"), command=self.assemble_manual).pack(side=tk.RIGHT, padx=5)
+        tk.Button(btn_frame, text="Assemble Master Manual", bg="#059669", fg="white", font=("Arial", 10, "bold"), command=self.assemble_manual).pack(side=tk.RIGHT, padx=5)
+
+    def on_client_change(self, event):
+        self.client_key = self.client_var.get()
+        self.config.current_client = self.client_key
+        save_config(self.config)
+        reload_config()
+        self.refresh_brand_summary()
 
     def refresh_brand_summary(self):
-        """Displays short status of current logo and colors."""
-        cfg = get_config()
-        t = cfg.theme
-        logo_name = Path(t.logo_path).name if t.logo_path else "Default (No Logo)"
-        summary = f"Brand: {t.company_name}\nColors: Primary #{t.primary_color} | Accent #{t.secondary_color}\nFont: {t.font_name} | Logo: {logo_name}"
+        """Displays short status of current client from manifest and style config."""
+        from manual_builder import load_manifest, load_style
+        try:
+            m = load_manifest(self.client_key, content_dir=self.config.content_dir)
+            s = load_style(self.client_key, styles_dir=self.config.styles_dir)
+            summary = (
+                f"Client: {m.client_display_name} | System: {m.system_name} ({m.system_acronym})\n"
+                f"Manual Title: {m.manual_title} v{m.version}\n"
+                f"Colors: Primary #{s.primary_color} | Accent #{s.accent_color} | Font: {s.body_font}"
+            )
+        except Exception as e:
+            summary = f"Error loading details for client '{self.client_key}':\n{e}"
         self.brand_label.config(text=summary)
 
-    def open_style_config(self):
-        """Opens modal dialog for setting manual theme."""
-        StyleConfigDialog(self.root, self)
+    def open_style_editor(self):
+        """Opens the new 8-tab visual formatting style editor."""
+        StyleEditorDialog(self.root, self.client_key)
+        self.refresh_brand_summary()
+
+    def open_content_folder(self):
+        """Opens the client's content files folder in Windows Explorer."""
+        folder = Path("content") / self.client_key
+        if folder.exists():
+            import os
+            try:
+                os.startfile(str(folder.resolve()))
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to open folder: {e}")
+        else:
+            messagebox.showerror("Error", f"Content folder does not exist: {folder}")
+
+    def new_client(self):
+        """Dialog to create a new client scaffold folder from defaults."""
+        new_key = filedialog.asksaveasfilename(
+            initialdir="content",
+            title="Create New Client Folder (Enter Client Acronym Name)",
+            filetypes=[]
+        )
+        if not new_key:
+            return
+        
+        new_key = Path(new_key).name.lower().replace(" ", "_")
+        if not new_key:
+            return
+            
+        content_dir = Path("content")
+        styles_dir = Path("styles")
+        
+        new_content_path = content_dir / new_key
+        new_style_path = styles_dir / f"{new_key}.yaml"
+        
+        if new_content_path.exists() or new_style_path.exists():
+            messagebox.showerror("Error", f"Client key '{new_key}' already exists.")
+            return
+            
+        import shutil
+        try:
+            # 1. Copy content/_default to content/new_key
+            shutil.copytree("content/_default", str(new_content_path))
+            
+            # 2. Copy styles/_default.yaml to styles/new_key.yaml
+            shutil.copy("styles/_default.yaml", str(new_style_path))
+            
+            # 3. Update manifest.yaml in the new client content folder
+            manifest_file = new_content_path / "manifest.yaml"
+            if manifest_file.exists():
+                with manifest_file.open("r", encoding="utf-8") as f:
+                    manifest_data = yaml.safe_load(f) or {}
+                manifest_data["client_key"] = new_key
+                manifest_data["client_display_name"] = new_key.upper()
+                with manifest_file.open("w", encoding="utf-8") as f:
+                    yaml.safe_dump(manifest_data, f, sort_keys=False)
+
+            # Reload client list
+            self.client_list = get_available_clients()
+            self.client_combo.config(values=self.client_list)
+            self.client_var.set(new_key)
+            self.on_client_change(None)
+            messagebox.showinfo("Success", f"Client scaffold '{new_key}' created successfully!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to create new client: {e}")
 
     def refresh_sessions(self):
         """Loads available session folders into the listbox."""
@@ -288,7 +387,7 @@ class LauncherUI:
         """Triggers the main recording pipeline, then refreshes the list."""
         self.root.iconify()  # Hide launcher during capture
         try:
-            run_pipeline()
+            run_pipeline(client_key=self.client_key)
             messagebox.showinfo("Success", "Module recorded successfully!")
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred during capture: {e}")
@@ -315,7 +414,7 @@ class LauncherUI:
             
         output_path = Path("Final_Manuals/Final_Client_Manual.docx")
         try:
-            assemble_master_manual(ordered_sessions, output_path)
+            assemble_master_manual(ordered_sessions, output_path, client_key=self.client_key)
             messagebox.showinfo("Success", f"Professional Manual compiled successfully!\nSaved to: {output_path.absolute()}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to assemble manual: {e}")

@@ -1,0 +1,64 @@
+client_key: ncb
+client_display_name: Narcotics Control Bureau
+system_name: National Economic Offense Records
+system_acronym: NEOR
+role_name: NCB Officer
+manual_title: User Manual for NCB
+version: "1.1"
+
+sections:
+  - id: cover
+    type: cover
+    source: cover.yaml
+  - id: revision_history
+    type: revision_history
+    source: revision_history.yaml
+  - id: toc
+    type: table_of_contents
+  - id: table_of_tables
+    type: table_of_tables
+  - id: table_of_figures
+    type: table_of_figures
+  - id: about_client
+    type: prose
+    heading: About CEIB
+    source: about_client.md
+  - id: introduction
+    type: prose
+    heading: Introduction to NEOR
+    source: introduction_to_system.md
+  - id: purpose
+    type: prose
+    heading: Purpose
+    source: purpose.md
+  - id: key_features
+    type: bullet_list
+    heading: Key Features of NEOR
+    source: key_features.yaml
+  - id: sop
+    type: group
+    heading: Standard Operating Procedures
+    subsections:
+      - id: buttons
+        heading: Button details
+        type: icon_table
+        source: common_ui/buttons.yaml
+      - id: icons
+        heading: Icon details
+        type: icon_table
+        source: common_ui/icons.yaml
+      - id: calendar
+        heading: Calendar detail
+        type: prose
+        source: common_ui/calendar.md
+  - id: getting_started
+    type: prose
+    heading: Getting Started
+    source: getting_started.md
+  - id: functionality
+    type: bullet_list
+    heading: Functionality for NCB
+    source: functionality.yaml
+  - id: modules
+    type: modules
+    # Modules are populated from captured sessions

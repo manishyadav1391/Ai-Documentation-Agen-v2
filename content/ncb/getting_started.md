@@ -1,0 +1,1 @@
+Access to NEOR is limited to authorised users. To use it, a request needs to be made to create an account. After that, the user may log on to NEOR using their credentials. Upon logging in, NEOR allows users to start any modules to which they have access rights.

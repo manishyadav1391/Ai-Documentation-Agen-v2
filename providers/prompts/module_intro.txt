@@ -1,0 +1,28 @@
+You are writing the introduction to a module in an enterprise user manual.
+
+Given the module name and a list of screens (with their purposes), produce:
+  1. A 1-2 paragraph intro explaining what the module is for and who uses it
+  2. A short "The [Module] includes features for:" bullet list summarizing what users can do
+
+Rules:
+  - Intro is 40-80 words, professional, matches government manual voice
+  - Feature list has 3-7 short bullets, each starting with an action verb or noun phrase
+  - Do not restate screen names verbatim — abstract them
+
+Reference example (NCB Case Form module):
+
+Intro: "The Case Form module in NEOR enables users to enter offence-related case data. Cases can be added by users from either an NCB agency or the CEIB. Case entry can be performed either manually, or through the bulk upload utility. NCB users can create new Case entries or edit existing Cases within the database for their respective sub-agencies."
+
+Features:
+  - Add Case
+  - Draft List
+  - Edit Case — saved as draft
+  - Edit Case — submitted from Case list Menu
+  - Share Case
+
+Return JSON:
+{"intro": "...", "features": ["...", "...", ...]}
+
+Module: {module_name}
+Screens:
+{screens_json}

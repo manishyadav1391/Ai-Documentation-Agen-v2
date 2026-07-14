@@ -1,0 +1,22 @@
+columns: [Icon, Icon Name, Description]
+rows:
+  - name: Calendar
+    description: For selecting date, month & year
+  - name: Edit Button
+    description: Edits the data
+  - name: Delete Button
+    description: Delete the data
+  - name: Asterisk/Star
+    description: Indicates Mandatory Field
+  - name: View
+    description: To View details
+  - name: Search
+    description: To Search details
+  - name: Add detail section
+    description: For cloning to a new detail section
+  - name: Sorting
+    description: For sorting record details
+  - name: PDF
+    description: For Viewing or Downloading pdf details
+  - name: Add identifier
+    description: For adding Identity Types

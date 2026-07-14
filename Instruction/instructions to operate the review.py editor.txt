@@ -62,3 +62,7 @@ We linked the user's manual adjustments directly to the AI generator inputs:
    - Use the **W+** or **←** buttons to nudge and select boxes.
    - Click **👁️ Preview Annotation Boxes** to see your additions drawn immediately.
    - Complete processing and check the generated `screen_N_content.json` file to verify that the field names and action list dynamically align with your custom labels.
+Add support for capturing multiple states of the same screen. Update the mouse-click handler:
+
+Single middle-click: capture new screen (current behavior)
+Shift + middle-click: capture as additional state of current screen (new)
