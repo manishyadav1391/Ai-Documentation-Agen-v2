@@ -2,6 +2,7 @@ import sys
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, colorchooser
 from pathlib import Path
+import yaml
 
 # Add project root directory to sys.path to allow imports from parent directory
 root_dir = Path(__file__).resolve().parent.parent
