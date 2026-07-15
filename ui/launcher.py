@@ -63,14 +63,17 @@ class StyleConfigDialog(tk.Toplevel):
         self.style_path = self.client_dir / "style.yaml"
 
         if not self.style_path.exists():
-            # Copy default style
+            # Copy default style (W16/T8.1)
             import shutil
             default_style = Path("clients/_default/style.yaml")
+            if not default_style.exists():
+                default_style = Path("styles/_default.yaml")
             if default_style.exists():
                 shutil.copy(default_style, self.style_path)
 
         with self.style_path.open("r", encoding="utf-8") as f:
             self.style_data = yaml.safe_load(f) or {}
+
 
         # Force null sections to dict to prevent AttributeError / TypeError when saving settings
         for key in ["fonts", "colors", "logo"]:
