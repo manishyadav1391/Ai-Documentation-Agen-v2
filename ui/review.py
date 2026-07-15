@@ -381,11 +381,12 @@ class ReviewSessionUI:
         self.scale = min(cw / iw, ch / ih, 1.0)
         
         self.scaled_image = self.pil_image.resize((int(iw * self.scale), int(ih * self.scale)), Image.Resampling.LANCZOS)
-        self.photo_image = ImageTk.PhotoImage(self.scaled_image)
+        self.photo_image = ImageTk.PhotoImage(self.scaled_image, master=self.canvas)
 
         self.canvas.delete(tk.ALL)
         self.canvas.config(width=self.photo_image.width(), height=self.photo_image.height())
         self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo_image)
+
 
         # Redraw existing regions
         self._redraw_regions()
@@ -780,7 +781,14 @@ class _FieldEditDialog:
 
 def open_review_ui(session_dir: Path, screen_index: int, total_screens: int = None) -> str:
     """Wrapper entry point loaded by main.py."""
-    root = tk.Tk()
-    app = ReviewSessionUI(root, session_dir, initial_idx=screen_index)
-    root.mainloop()
-    return "next"  # review UI now handles page traversal natively in a single load
+    if tk._default_root is not None:
+        # Prevent "image doesn't exist" TclError by using Toplevel inside same Tcl interpreter
+        window = tk.Toplevel(tk._default_root)
+        app = ReviewSessionUI(window, session_dir, initial_idx=screen_index)
+        tk._default_root.wait_window(window)
+    else:
+        root = tk.Tk()
+        app = ReviewSessionUI(root, session_dir, initial_idx=screen_index)
+        root.mainloop()
+    return "next"
+
