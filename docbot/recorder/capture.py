@@ -244,11 +244,12 @@ class CaptureSession:
 
             logger.info("=" * 55)
             logger.info("Browser active. Controls:")
-            logger.info("  Middle-click          → Capture screen")
-            logger.info("  Ctrl + Middle-click   → Force full-page capture")
-            logger.info("  Shift + Middle-click  → Capture as state of last screen")
-            logger.info("  Double Middle-click   → Quit and process")
+            logger.info("  Capture screen        → Middle-click  OR  Alt + C  OR  Ctrl + Shift + C")
+            logger.info("  Force full-page       → Ctrl+Middle-click  OR  Alt + F  OR  Ctrl + Shift + F")
+            logger.info("  Capture state         → Shift+Middle-click  OR  Alt + S  OR  Ctrl + Shift + S")
+            logger.info("  Quit & Process        → Double Middle-click  OR  Alt + Q  OR  Ctrl + Shift + Q")
             logger.info("=" * 55)
+
 
             # Event loop — non-blocking poll
             while not self._state["quit"]:

@@ -1,6 +1,6 @@
 provider: ollama
 default_template: corporate
-current_client: orangehrms
+current_client: ncd
 content_dir: content
 clients_dir: clients
 styles_dir: styles

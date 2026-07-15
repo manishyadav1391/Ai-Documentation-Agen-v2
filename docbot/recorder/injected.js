@@ -136,6 +136,36 @@
     }
   }, true);
 
+  // Keyboard shortcuts for capture actions (Issue 3)
+  window.addEventListener('keydown', function (e) {
+    const isAlt = e.altKey;
+    const isCtrlShift = e.ctrlKey && e.shiftKey;
+    if (isAlt || isCtrlShift) {
+      const key = e.key.toLowerCase();
+      if (key === 'c' || key === '1') {
+        e.preventDefault();
+        if (typeof window.triggerCapture === 'function') {
+          window.triggerCapture();
+        }
+      } else if (key === 'f' || key === '2') {
+        e.preventDefault();
+        if (typeof window.triggerFullPageCapture === 'function') {
+          window.triggerFullPageCapture();
+        }
+      } else if (key === 's' || key === '3') {
+        e.preventDefault();
+        if (typeof window.triggerStateCapture === 'function') {
+          window.triggerStateCapture();
+        }
+      } else if (key === 'q' || key === '4') {
+        e.preventDefault();
+        if (typeof window.triggerQuit === 'function') {
+          window.triggerQuit();
+        }
+      }
+    }
+  }, true);
+
   // ── Click events ──────────────────────────────────────────────────────────
 
   window.addEventListener('click', function (e) {

@@ -158,31 +158,28 @@ def load_style(
     styles_dir: str = "styles",
 ) -> StyleConfig:
     """
-    Load styles/<client_key>.yaml.
-
-    Falls back to styles/_default.yaml if the client style doesn't exist.
-
-    Args:
-        client_key: e.g. 'ncb'
-        styles_dir: root styles directory
-
-    Returns:
-        A StyleConfig instance.
+    Load style configuration. Prioritizes the client profile folder (clients/<client_key>/style.yaml)
+    before falling back to legacy styles/<client_key>.yaml or default templates.
     """
-    base = Path(styles_dir).resolve()
-    client_path = base / f"{client_key}.yaml"
-    default_path = base / "_default.yaml"
-
-    if client_path.exists():
-        style_path = client_path
-    elif default_path.exists():
-        style_path = default_path
-        print(f"[Style] No style for '{client_key}', using default.")
+    client_style_path = Path("clients") / client_key / "style.yaml"
+    if client_style_path.exists():
+        style_path = client_style_path
     else:
-        print(f"[Style] No style files found. Using built-in defaults.")
-        return StyleConfig(raw={})
+        base = Path(styles_dir).resolve()
+        client_path = base / f"{client_key}.yaml"
+        default_path = base / "_default.yaml"
+
+        if client_path.exists():
+            style_path = client_path
+        elif default_path.exists():
+            style_path = default_path
+            print(f"[Style] No style for '{client_key}', using default.")
+        else:
+            print(f"[Style] No style files found. Using built-in defaults.")
+            return StyleConfig(raw={})
 
     with style_path.open("r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
 
     return StyleConfig(raw=raw)
+

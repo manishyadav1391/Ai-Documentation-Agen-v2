@@ -120,7 +120,44 @@ def run_pipeline(client_key: str = None, start_url: str = None, module_name: str
     generator = Generator(provider)
 
     logger.info("--- Pre-generating Documentation (AI single-call) ---")
-    for screen in session.screens:
+
+    # Spawn a small loading progress window to let the user know the LLM is working (Issue 4)
+    import tkinter as tk
+    from tkinter import ttk
+
+    loading_win = None
+    pb = None
+    status_lbl = None
+    try:
+        loading_win = tk.Toplevel() if tk._default_root is not None else tk.Tk()
+        loading_win.title("DocBot AI — Generating Documentation")
+        loading_win.geometry("450x160")
+        loading_win.resizable(False, False)
+        # Force grab focus and raise topmost
+        loading_win.focus_force()
+        loading_win.attributes("-topmost", True)
+
+        lbl = tk.Label(loading_win, text="AI is generating screen documentation...", font=("Segoe UI", 11, "bold"))
+        lbl.pack(pady=15)
+
+        pb = ttk.Progressbar(loading_win, mode="determinate", length=350)
+        pb.pack(pady=5)
+
+        status_lbl = tk.Label(loading_win, text="Initializing LLM connection...", font=("Segoe UI", 9, "italic"))
+        status_lbl.pack(pady=5)
+        loading_win.update()
+    except Exception as e:
+        logger.debug(f"Could not spawn progress window: {e}")
+
+    for idx, screen in enumerate(session.screens):
+        if loading_win:
+            try:
+                pb["value"] = int((idx / num_screens) * 100)
+                status_lbl.config(text=f"Screen {screen.index} of {num_screens} (Calling {provider.name})...")
+                loading_win.update()
+            except Exception:
+                pass
+
         # Avoid overwriting already generated/edited screens unless forced
         if not screen.content.screen_name or not screen.content.purpose:
             try:
@@ -128,6 +165,13 @@ def run_pipeline(client_key: str = None, start_url: str = None, module_name: str
                 generator.generate_screen(session, screen, client_profile=profile.data)
             except Exception as e:
                 logger.warning(f"Failed to pre-generate Screen {screen.index}: {e}")
+
+    if loading_win:
+        try:
+            loading_win.destroy()
+        except Exception:
+            pass
+
 
     # Save generated state
     SessionStore.save(session, latest_session)

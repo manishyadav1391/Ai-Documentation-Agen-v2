@@ -85,9 +85,16 @@ def render_screen(doc, screen_index, session_dir, content_data, screen_meta, sty
     
     for fig_entry in figures_list:
         fig_rel_path = fig_entry.get("path")
+        # Prioritize annotated screen image if it exists (Issue 6)
+        if fig_entry.get("index") == 1 or fig_rel_path.startswith("screen_"):
+            annotated_name = f"screen_{screen_index}_annotated.png"
+            if (session_dir / annotated_name).exists():
+                fig_rel_path = annotated_name
+
         fig_path = session_dir / fig_rel_path
         if not fig_path.exists():
             continue
+
 
         p_img = doc.add_paragraph()
         p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER

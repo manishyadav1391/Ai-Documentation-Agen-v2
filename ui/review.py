@@ -237,6 +237,9 @@ class ReviewSessionUI:
         self.region_label_entry.grid(row=0, column=1, sticky=tk.W, pady=5)
         self.region_label_entry.bind("<KeyRelease>", self._on_region_label_changed)
 
+        ttk.Button(region_edit_frame, text="Delete Region", command=self._delete_active_region).grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=8)
+
+
     # ── Sidebar & Navigation ──────────────────────────────────────────────────
 
     def _refresh_sidebar(self):
@@ -311,10 +314,16 @@ class ReviewSessionUI:
 
     def _refresh_regions_listbox(self):
         self.regions_listbox.delete(0, tk.END)
+        active_idx = None
         for r in self.screen.regions:
             if not r.deleted:
                 label = r.label or r.elements_contained[0] if r.elements_contained else "Unnamed region"
                 self.regions_listbox.insert(tk.END, f"[{r.role}] {label} ({r.id})")
+                if r.id == self.active_region_id:
+                    active_idx = self.regions_listbox.size() - 1
+        if active_idx is not None:
+            self.regions_listbox.select_set(active_idx)
+
 
     # ── Save States ──────────────────────────────────────────────────────────
 
@@ -386,8 +395,9 @@ class ReviewSessionUI:
 
         self.canvas.delete(tk.ALL)
         self.canvas.config(width=self.photo_image.width(), height=self.photo_image.height())
-        self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo_image)
+        self.bg_image_id = self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo_image)
         self.canvas.image = self.photo_image  # Keep reference to prevent garbage collection!
+
 
         # Redraw existing regions
         self._redraw_regions()
@@ -395,9 +405,11 @@ class ReviewSessionUI:
 
     def _redraw_regions(self):
         # Clear drawn boxes (but keep the background screenshot)
-        for item in self.canvas.find_all():
-            if item != 1:  # 1 is the background screenshot image
+        bg_id = getattr(self, "bg_image_id", None)
+        for item in list(self.canvas.find_all()):
+            if item != bg_id:
                 self.canvas.delete(item)
+
 
         for r in self.screen.regions:
             if r.deleted:
@@ -465,12 +477,19 @@ class ReviewSessionUI:
         self._push_undo()
 
         # Prompt for role/label
-        role = "filter_form"
         role_dialog = _RoleDialog(self.root)
-        if role_dialog.result:
-            role = role_dialog.result
+        if not role_dialog.result:
+            # User cancelled role selection
+            return
+
+        role = role_dialog.result
 
         label = simpledialog.askstring("Region Label", "Enter label name for this region:")
+        if label is None:
+            # User clicked Cancel on label input
+            return
+            
+        label = label.strip()
         if not label:
             label = f"{role.replace('_', ' ').title()}"
 
@@ -485,6 +504,7 @@ class ReviewSessionUI:
         self.screen.regions.append(new_region)
         self._redraw_regions()
         self._refresh_regions_listbox()
+
 
     def _on_canvas_right_click(self, event):
         # Find region under click
@@ -598,9 +618,21 @@ class ReviewSessionUI:
             for r in self.screen.regions:
                 if r.id == self.active_region_id:
                     r.label = self.region_label_entry.get().strip()
-                    # Redraw to see label update
                     self._redraw_regions()
+                    self._refresh_regions_listbox()
                     break
+
+    def _delete_active_region(self):
+        if self.active_region_id:
+            for r in self.screen.regions:
+                if r.id == self.active_region_id:
+                    self._push_undo()
+                    r.deleted = True
+                    self.active_region_id = None
+                    self._redraw_regions()
+                    self._refresh_regions_listbox()
+                    break
+
 
     # ── Figures list actions ──────────────────────────────────────────────────
 
@@ -729,7 +761,11 @@ class _RoleDialog:
         self.combo = ttk.Combobox(self.dialog, textvariable=self.role_var, values=roles, state="readonly")
         self.combo.pack(pady=10)
 
-        ttk.Button(self.dialog, text="Select", command=self._on_select).pack(pady=15)
+        btn_frame = ttk.Frame(self.dialog)
+        btn_frame.pack(pady=15)
+        ttk.Button(btn_frame, text="Select", command=self._on_select).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=self.dialog.destroy).pack(side=tk.LEFT, padx=5)
+
         
         # Center in parent
         self.dialog.transient(parent)
