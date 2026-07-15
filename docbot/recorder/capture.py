@@ -453,13 +453,23 @@ class CaptureSession:
             vp_name = f"{base}_viewport.png"
             vp_path = self.session_dir / vp_name
             try:
-                page.screenshot(path=str(vp_path), full_page=False)
+                # Retrieve window coordinates to clip to visible viewport only
+                vp_box = page.evaluate("""() => {
+                    return {
+                        x: window.scrollX,
+                        y: window.scrollY,
+                        width: window.innerWidth,
+                        height: window.innerHeight
+                    };
+                }""")
+                page.screenshot(path=str(vp_path), clip=vp_box)
                 if mode == "viewport":
                     screen.screenshot = vp_name
                 screen.viewport_screenshot = vp_name
                 figures.append(Figure(index=len(figures) + 1, path=vp_name,
                                       source="viewport", scroll_y=0.0))
-                logger.debug(f"Viewport screenshot → {vp_name}")
+                logger.debug(f"Viewport screenshot (clipped) → {vp_name}")
+
 
                 # Scroll-capture segmentation (viewport mode only, W8)
                 if mode == "viewport" and self.scroll_capture and not is_state:

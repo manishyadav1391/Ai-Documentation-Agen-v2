@@ -59,11 +59,12 @@ _DEFAULT_ROLE_COLORS = {
     "action_group": "red",
     "action_column": "red",
     "table_header": "red",
-    "view_only": "green",
-    "page_header": "blue",
-    "navigation_bar": "blue",
-    "section_heading": "blue",
+    "view_only": "red",
+    "page_header": "red",
+    "navigation_bar": "red",
+    "section_heading": "red",
 }
+
 
 
 @dataclass

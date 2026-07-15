@@ -47,9 +47,11 @@ class ReviewSessionUI:
         self.active_region_id: str | None = None
         self.selected_step_idx: int | None = None
         self.selected_field_idx: int | None = None
+        self.preview_mode = False
         
         # Undo stack for drawing
         self._undo_stack: list[list[Region]] = []
+
 
         # Setup standard styles
         self._setup_style()
@@ -136,6 +138,10 @@ class ReviewSessionUI:
         ttk.Button(zoom_bar, text="Fit", width=5, command=self._zoom_fit).pack(side=tk.LEFT, padx=4)
         ttk.Button(zoom_bar, text="100%", width=5, command=self._zoom_100).pack(side=tk.LEFT, padx=2)
         ttk.Button(zoom_bar, text="200%", width=5, command=self._zoom_200).pack(side=tk.LEFT, padx=2)
+
+        self.preview_btn = ttk.Button(zoom_bar, text="👁️ Preview", width=10, command=self._toggle_preview)
+        self.preview_btn.pack(side=tk.RIGHT, padx=6)
+
 
         # Canvas container with scrollbars
         canvas_container = ttk.Frame(canvas_frame)
@@ -444,10 +450,16 @@ class ReviewSessionUI:
         self.canvas.update_idletasks()
         canvas_w = self.canvas.winfo_width() or 850
         canvas_h = self.canvas.winfo_height() or 700
-        fit_zoom = min(canvas_w / self.orig_w, canvas_h / self.orig_h, 1.0)
+        # Check if the screenshot is a tall full-page capture, fit width-wise (Issue 3)
+        if self.orig_h / self.orig_w > 1.2:
+            fit_zoom = canvas_w / self.orig_w
+        else:
+            fit_zoom = min(canvas_w / self.orig_w, canvas_h / self.orig_h, 1.0)
+            
         self._zoom_level = max(0.1, min(fit_zoom, 6.0))
         self._zoom_var.set(self._zoom_level)
         self._zoom_label.config(text=f"{int(self._zoom_level * 100)}%")
+
 
         self._render_canvas()
 
@@ -474,6 +486,8 @@ class ReviewSessionUI:
         self._highlight_active_region()
 
     def _redraw_regions(self):
+        if getattr(self, "preview_mode", False):
+            return
         # Clear drawn boxes (but keep the background screenshot)
         bg_id = getattr(self, "bg_image_id", None)
         for item in list(self.canvas.find_all()):
@@ -489,13 +503,9 @@ class ReviewSessionUI:
             x1, y1 = bb.x * z, bb.y * z
             x2, y2 = (bb.x + bb.width) * z, (bb.y + bb.height) * z
             
-            # Select colors based on role
+            # Select colors based on role (always red as requested by user)
             color = "#EF4444"  # red
-            if r.role == "view_only":
-                color = "#22C55E"  # green
-            elif "navigation" in r.role or "header" in r.role:
-                color = "#3B82F6"  # blue
-                
+            
             # Draw rectangle
             rect_id = self.canvas.create_rectangle(x1, y1, x2, y2, outline=color, width=2, tags="box_overlay")
             
@@ -508,9 +518,12 @@ class ReviewSessionUI:
 
     def _highlight_active_region(self):
         self.canvas.delete("highlight_overlay")
+        if getattr(self, "preview_mode", False):
+            return
         if not self.active_region_id:
             return
         r = next((x for x in self.screen.regions if x.id == self.active_region_id), None)
+
         if not r or r.deleted:
             return
         bb = r.bounding_box
@@ -556,11 +569,18 @@ class ReviewSessionUI:
         self.canvas.update_idletasks()
         canvas_w = self.canvas.winfo_width() or 850
         canvas_h = self.canvas.winfo_height() or 700
-        fit_zoom = min(canvas_w / self.orig_w, canvas_h / self.orig_h, 1.0)
+        
+        # Check if tall full-page screenshot (fit to width, scroll vertically)
+        if self.orig_h / self.orig_w > 1.2:
+            fit_zoom = canvas_w / self.orig_w
+        else:
+            fit_zoom = min(canvas_w / self.orig_w, canvas_h / self.orig_h, 1.0)
+            
         self._zoom_level = max(0.1, min(fit_zoom, 6.0))
         self._zoom_var.set(self._zoom_level)
         self._zoom_label.config(text=f"{int(self._zoom_level * 100)}%")
         self._render_canvas()
+
 
     def _zoom_100(self):
         self._zoom_level = 1.0
@@ -600,12 +620,15 @@ class ReviewSessionUI:
             self._drag_start = (event.x, event.y)
 
     def _on_canvas_press(self, event):
+        if getattr(self, "preview_mode", False):
+            return
         # We need absolute coordinates on the scrollable canvas area
         cx = self.canvas.canvasx(event.x)
         cy = self.canvas.canvasy(event.y)
         self.draw_start_x = cx
         self.draw_start_y = cy
         self.draw_rect_id = self.canvas.create_rectangle(cx, cy, cx, cy, outline="#F59E0B", width=2)
+
 
     def _on_canvas_drag(self, event):
         cx = self.canvas.canvasx(event.x)
@@ -805,6 +828,8 @@ class ReviewSessionUI:
                 self.open_region_edit_dialog(region)
 
     def on_canvas_double_click(self, event):
+        if getattr(self, "preview_mode", False):
+            return
         # We need absolute coordinates on the scrollable canvas area
         cx = self.canvas.canvasx(event.x)
         cy = self.canvas.canvasy(event.y)
@@ -813,6 +838,7 @@ class ReviewSessionUI:
         for r in reversed(self.screen.regions):
             if r.deleted:
                 continue
+
             bb = r.bounding_box
             if bb.x <= orig_x <= bb.x + bb.width and bb.y <= orig_y <= bb.y + bb.height:
                 self.open_region_edit_dialog(r)
@@ -1019,6 +1045,57 @@ class ReviewSessionUI:
             messagebox.showinfo("Success", f"Draft module compiled inside {self.session_dir.name}!")
         except Exception as e:
             messagebox.showerror("Error", f"Assembly failed: {e}")
+
+    def _toggle_preview(self):
+        if not hasattr(self, "preview_mode"):
+            self.preview_mode = False
+            
+        if not self.preview_mode:
+            # Switch to preview mode
+            # 1. Save inputs to in-memory model
+            self._save_active_screen_inputs()
+            # 2. Write legacy JSON
+            self._write_legacy_json_files()
+            # 3. Render annotations
+            from docbot.processing.annotate import render_annotations
+            cfg = get_config()
+            from docbot.clients.profile import ClientProfile
+            profile = ClientProfile.load(cfg.current_client)
+            
+            # Show a temporary status cursor
+            self.root.config(cursor="watch")
+            self.root.update()
+            try:
+                render_annotations(self.session_dir, self.screen.index, client_profile=profile.data)
+            except Exception as ex:
+                messagebox.showerror("Error", f"Could not render preview annotations: {ex}")
+                self.root.config(cursor="")
+                return
+            self.root.config(cursor="")
+            
+            # Check if annotated file exists
+            annotated_path = self.session_dir / f"screen_{self.screen.index}_annotated.png"
+            if annotated_path.exists():
+                self.preview_mode = True
+                self.preview_btn.config(text="✏️ Edit Mode")
+                self.pil_image = Image.open(annotated_path)
+                self.orig_w, self.orig_h = self.pil_image.size
+                self._render_canvas()
+            else:
+                messagebox.showerror("Error", "Could not load annotated preview image.")
+        else:
+            # Switch back to edit mode
+            self.preview_mode = False
+            self.preview_btn.config(text="👁️ Preview")
+            # Reload original screenshot
+            img_path = self.session_dir / self.screen.screenshot
+            if not img_path.exists():
+                img_path = self.session_dir / f"screen_{self.screen.index}.png"
+            if img_path.exists():
+                self.pil_image = Image.open(img_path)
+                self.orig_w, self.orig_h = self.pil_image.size
+            self._render_canvas()
+
 
 
 # ── Custom Modal Dialogs ──────────────────────────────────────────────────
