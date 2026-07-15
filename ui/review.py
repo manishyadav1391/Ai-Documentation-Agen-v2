@@ -381,15 +381,17 @@ class ReviewSessionUI:
         self.scale = min(cw / iw, ch / ih, 1.0)
         
         self.scaled_image = self.pil_image.resize((int(iw * self.scale), int(ih * self.scale)), Image.Resampling.LANCZOS)
-        self.photo_image = ImageTk.PhotoImage(self.scaled_image, master=self.canvas)
+        self.photo_image = ImageTk.PhotoImage(self.scaled_image, master=self.root)
+
 
         self.canvas.delete(tk.ALL)
         self.canvas.config(width=self.photo_image.width(), height=self.photo_image.height())
         self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo_image)
-
+        self.canvas.image = self.photo_image  # Keep reference to prevent garbage collection!
 
         # Redraw existing regions
         self._redraw_regions()
+
 
     def _redraw_regions(self):
         # Clear drawn boxes (but keep the background screenshot)

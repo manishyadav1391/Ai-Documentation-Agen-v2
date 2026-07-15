@@ -1,4 +1,4 @@
-provider: browser
+provider: ollama
 default_template: corporate
 current_client: ncd
 content_dir: content
