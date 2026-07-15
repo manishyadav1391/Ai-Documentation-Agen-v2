@@ -145,10 +145,6 @@ def render_module(doc, session_dir, style, numbering):
                 r_feat.font.size = Pt(style.body_size)
                 r_feat.font.color.rgb = hex_to_rgb(style.get_color("body_text"))
 
-        # Add space after intro blocks
-        p_space = doc.add_paragraph()
-        p_space.paragraph_format.space_after = Pt(12)
-
     # 6. Render Screens sequentially
     for screen_idx, content_path, meta_path in screens_to_render:
         try:

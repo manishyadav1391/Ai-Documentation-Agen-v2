@@ -1,16 +1,20 @@
 client_key: ncd
-client_display_name: "NCD"
-system_name: "NCD System"
+client_display_name: "National Cooperative Database"
+system_name: "NCD State Nodal Portal"
 system_acronym: "NCD"
-role_name: "User"
-manual_title: "NCD System User Manual"
+role_name: "State Nodal Officer"
+manual_title: "User Manual"
 version: "1.0"
-numbering_mode: continuous    # W5/W6: 1, 2, 3 continuously across all modules
+document_version: "1.0"
+audience: "State Nodal Officers"
+confidentiality: "CONFIDENTIAL"
+prepared_by: ""
+reviewed_by: ""
+approved_by: ""
+cover_enabled: false   # NCD reference starts with revision history, not a cover
+numbering_mode: continuous
 
 sections:
-  - id: cover
-    type: cover
-    source: cover.yaml
   - id: revision_history
     type: revision_history
     source: revision_history.yaml

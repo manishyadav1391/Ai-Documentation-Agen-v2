@@ -133,29 +133,35 @@ def add_numpages_field(run):
             run._r.append(fc)
 
 
-def add_toc_field(paragraph, max_depth: int = 3):
-    """Add a native Word TOC field to a paragraph."""
-    p_element = paragraph._p
-    fldChar1 = OxmlElement("w:fldChar")
-    fldChar1.set(qn("w:fldCharType"), "begin")
-    instrText = OxmlElement("w:instrText")
-    instrText.set(qn("xml:space"), "preserve")
-    instrText.text = f'TOC \\o "1-{max_depth}" \\h \\z \\u'
-    fldChar2 = OxmlElement("w:fldChar")
-    fldChar2.set(qn("w:fldCharType"), "separate")
-    fldChar3 = OxmlElement("w:fldChar")
-    fldChar3.set(qn("w:fldCharType"), "end")
+def add_toc_field(paragraph, max_depth: int = 3, placeholder: str = "Table of contents will update automatically."):
+    """
+    Add a native Word TOC field to a paragraph.
+    Every fldChar/instrText is correctly wrapped in its own <w:r> (OOXML-correct).
+    """
+    def _run_with(el):
+        r = OxmlElement("w:r")
+        r.append(el)
+        paragraph._p.append(r)
 
-    p_element.append(fldChar1)
-    p_element.append(instrText)
-    p_element.append(fldChar2)
+    begin = OxmlElement("w:fldChar")
+    begin.set(qn("w:fldCharType"), "begin")
+    _run_with(begin)
 
-    r = OxmlElement("w:r")
-    rText = OxmlElement("w:t")
-    rText.text = "[Right-click here and select 'Update Field' to generate Table of Contents]"
-    r.append(rText)
-    p_element.append(r)
-    p_element.append(fldChar3)
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = f'TOC \\o "1-{max_depth}" \\h \\z \\u'
+    _run_with(instr)
+
+    sep = OxmlElement("w:fldChar")
+    sep.set(qn("w:fldCharType"), "separate")
+    _run_with(sep)
+
+    if placeholder:
+        paragraph.add_run(placeholder)
+
+    end = OxmlElement("w:fldChar")
+    end.set(qn("w:fldCharType"), "end")
+    _run_with(end)
 
 
 def add_body_paragraph(doc, text: str, font_name: str = "Calibri", size_pt: float = 11,
@@ -252,19 +258,27 @@ def setup_header_footer(doc, style_config, manifest=None):
             p_logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
             if logo_path and logo_path.exists():
                 try:
-                    logo_size = style_config.logo.get("size_cm", 2)
-                    p_logo.add_run().add_picture(str(logo_path), height=Cm(logo_size))
+                    # D1: logo height 0.45" per reference manual spec
+                    logo_h_in = style_config.raw.get("header", {}).get("logo_height_inches", 0.45)
+                    p_logo.add_run().add_picture(str(logo_path), height=Inches(logo_h_in))
                 except Exception:
                     pass
 
             cell_title = table.cell(0, 1)
             p_title = cell_title.paragraphs[0]
             p_title.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            # D1: right-aligned italic 8pt gray "<client> — <title>"
+            right_pt = style_config.raw.get("header", {}).get("right_text_pt", 8)
+            right_color_hex = style_config.raw.get("header", {}).get("right_text_color", "666666")
             run_title = p_title.add_run(doc_title)
             run_title.font.name = font_name
-            run_title.font.size = Pt(8.5)
+            run_title.font.size = Pt(right_pt)
             run_title.font.italic = True
-            run_title.font.color.rgb = RGBColor(100, 100, 100)
+            try:
+                from manual_builder.utils import hex_to_rgb as _h2r
+                run_title.font.color.rgb = _h2r(right_color_hex)
+            except Exception:
+                run_title.font.color.rgb = RGBColor(100, 100, 100)
 
             sep_p = header.add_paragraph()
             add_bottom_border(sep_p, color_hex="CCCCCC", sz=4)

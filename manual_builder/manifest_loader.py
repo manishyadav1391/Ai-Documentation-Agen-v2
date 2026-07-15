@@ -1,7 +1,8 @@
 """
-Manifest loader — reads content/<client>/manifest.yaml and resolves source paths.
+Manifest loader — reads clients/<client>/manifest.yaml and resolves source paths.
 """
 
+import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -32,9 +33,33 @@ class ManifestConfig:
     sections: List[SectionEntry]
     content_dir: Path  # absolute path to client's content folder
 
+    # Extended fields (Section B spec)
+    audience: str = ""
+    document_version: str = ""
+    confidentiality: str = ""
+    prepared_by: str = ""
+    reviewed_by: str = ""
+    approved_by: str = ""
+    cover_enabled: bool = True
+
     def get_source_path(self, source: str) -> Path:
         """Resolve a source path relative to the client content dir."""
         return self.content_dir / source
+
+    def require(self, field_name: str, renderer: str = "renderer") -> str:
+        """
+        Return the named field value, or raise BuildError if it is empty.
+        Ensures no bracket placeholders reach a deliverable (Spec B2).
+        """
+        from manual_builder.build_error import BuildError
+        value = getattr(self, field_name, "")
+        if not value or str(value).strip().startswith("["):
+            raise BuildError(
+                f"manifest field '{field_name}' is required by the {renderer} "
+                f"but is empty or contains a placeholder. "
+                f"Set it in clients/{self.client_key}/manifest.yaml."
+            )
+        return str(value)
 
 
 def _parse_section(raw: Dict[str, Any]) -> SectionEntry:
@@ -57,13 +82,14 @@ def load_manifest(
     content_dir: str = "content",
 ) -> ManifestConfig:
     """
-    Load and parse content/<client_key>/manifest.yaml.
+    Load and parse clients/<client_key>/manifest.yaml (preferred) or
+    content/<client_key>/manifest.yaml.
 
     Falls back to content/_default/manifest.yaml if the client folder
     doesn't have a manifest.
 
     Args:
-        client_key: The client folder name (e.g. 'ncb').
+        client_key: The client folder name (e.g. 'ncd').
         content_dir: Root content directory (default: 'content').
 
     Returns:
@@ -72,12 +98,21 @@ def load_manifest(
     Raises:
         FileNotFoundError: If neither client nor default manifest exists.
     """
+    # Prefer clients/<key>/manifest.yaml over legacy content/<key>/manifest.yaml
+    client_root = Path("clients") / client_key
+    client_manifest = client_root / "manifest.yaml"
+
     base = Path(content_dir).resolve()
-    client_path = base / client_key / "manifest.yaml"
+    legacy_path = base / client_key / "manifest.yaml"
     default_path = base / "_default" / "manifest.yaml"
 
-    if client_path.exists():
-        manifest_path = client_path
+    if client_manifest.exists():
+        manifest_path = client_manifest
+        # Content lives under clients/<key>/content/ if present, else legacy content/<key>/
+        content_sub = client_root / "content"
+        resolved_content_dir = content_sub if content_sub.exists() else (base / client_key)
+    elif legacy_path.exists():
+        manifest_path = legacy_path
         resolved_content_dir = base / client_key
     elif default_path.exists():
         manifest_path = default_path
@@ -85,7 +120,7 @@ def load_manifest(
     else:
         raise FileNotFoundError(
             f"No manifest found for client '{client_key}' "
-            f"(looked at {client_path} and {default_path})"
+            f"(looked at {client_manifest}, {legacy_path}, and {default_path})"
         )
 
     with manifest_path.open("r", encoding="utf-8") as f:
@@ -103,16 +138,35 @@ def load_manifest(
         version=raw.get("version", "1.0"),
         sections=sections,
         content_dir=resolved_content_dir,
+        # Extended spec B fields
+        audience=raw.get("audience", ""),
+        document_version=raw.get("document_version", raw.get("version", "1.0")),
+        confidentiality=raw.get("confidentiality", ""),
+        prepared_by=raw.get("prepared_by", ""),
+        reviewed_by=raw.get("reviewed_by", ""),
+        approved_by=raw.get("approved_by", ""),
+        cover_enabled=raw.get("cover_enabled", True),
     )
 
 
 def get_available_clients(content_dir: str = "content") -> List[str]:
     """Return a list of client keys that have manifest.yaml files."""
+    found = set()
+
+    # Check clients/ directory first
+    clients_root = Path("clients")
+    if clients_root.exists():
+        for child in sorted(clients_root.iterdir()):
+            if child.is_dir() and child.name != "_default":
+                if (child / "manifest.yaml").exists():
+                    found.add(child.name)
+
+    # Also check legacy content/ directory
     base = Path(content_dir).resolve()
-    clients = []
     if base.exists():
         for child in sorted(base.iterdir()):
             if child.is_dir() and child.name != "_default":
                 if (child / "manifest.yaml").exists():
-                    clients.append(child.name)
-    return clients
+                    found.add(child.name)
+
+    return sorted(found)

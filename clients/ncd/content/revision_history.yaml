@@ -1,0 +1,10 @@
+# Revision History for NCD State Nodal Portal User Manual
+# Columns: Version | Date | Description | Prepared By | Reviewed By | Approved By
+
+entries:
+  - version: "1.0"
+    date: ""          # Leave blank to auto-fill today's date at build time
+    description: "Initial version of the User Manual for NCD State Nodal Portal."
+    prepared_by: ""   # Fill in before publishing
+    reviewed_by: ""
+    approved_by: ""

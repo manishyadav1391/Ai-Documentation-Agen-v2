@@ -183,3 +183,14 @@ class NumberingTracker:
         if self.style and hasattr(self.style, 'numbering'):
             return self.style.numbering.get("table_prefix", "Table")
         return "Table"
+
+    @property
+    def figure_count(self) -> int:
+        """Total figures registered so far (used to decide whether to emit TOF)."""
+        return len(self._figure_captions)
+
+    @property
+    def table_count(self) -> int:
+        """Total tables registered so far (used to decide whether to emit TOT)."""
+        return len(self._table_captions)
+

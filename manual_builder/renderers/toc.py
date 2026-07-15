@@ -95,7 +95,7 @@ def render_toc(doc, section_entry, manifest, style):
     _insert_field(
         p_toc,
         instr_text=f'TOC \\o "1-{max_depth}" \\h \\z \\u',
-        placeholder="[Right-click here and select \u2018Update Field\u2019 to generate Table of Contents]",
+        placeholder="Table of contents will update automatically.",
     )
 
     doc.add_page_break()
@@ -123,7 +123,7 @@ def render_table_of_tables(doc, section_entry, manifest, style):
     _insert_field(
         p_tot,
         instr_text=f'TOC \\c "{table_prefix}"',
-        placeholder=f"[Right-click here and select \u2018Update Field\u2019 to generate listing of captioned {table_prefix}s]",
+        placeholder=f"List of {table_prefix}s will update automatically.",
     )
 
     doc.add_page_break()
@@ -151,7 +151,7 @@ def render_table_of_figures(doc, section_entry, manifest, style):
     _insert_field(
         p_tof,
         instr_text=f'TOC \\c "{figure_prefix}"',
-        placeholder=f"[Right-click here and select \u2018Update Field\u2019 to generate listing of captioned {figure_prefix}s]",
+        placeholder=f"List of {figure_prefix}s will update automatically.",
     )
 
     doc.add_page_break()

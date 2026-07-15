@@ -5,7 +5,10 @@ Generic manifest-driven document builder implementation.
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from docx import Document
-from docx.shared import Inches, Pt, Cm
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Inches, Pt, Cm, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from manual_builder.manifest_loader import ManifestConfig, SectionEntry
 from manual_builder.style_loader import StyleConfig
@@ -21,6 +24,13 @@ from manual_builder.renderers.bullet_list import render_bullet_list
 from manual_builder.renderers.icon_table import render_icon_table
 from manual_builder.renderers.group import render_group
 from manual_builder.renderers.module import render_module
+
+# Exact A4 dimensions in EMU (English Metric Units) for python-docx
+_A4_WIDTH_TWIPS = 11906
+_A4_HEIGHT_TWIPS = 16838
+_INCH_IN_TWIPS = 1440
+_A4_WIDTH_EMU = 7772400   # 11906 twips → EMU
+_A4_HEIGHT_EMU = 10977600  # 16838 twips → EMU
 
 
 class GenericBuilder:
@@ -42,40 +52,96 @@ class GenericBuilder:
         self._setup_styles()
 
     def _setup_styles(self):
-        """Configure page setup, document margins, standard styles, and header/footer."""
-        # 1. Page Margins (from style)
+        """Configure page setup, document core properties, styles, and header/footer."""
+
+        # ── G: Core document properties (title, author) ───────────────────
+        core = self.doc.core_properties
+        core.title = f"{self.manifest.system_name} {self.manifest.manual_title}"
+        core.author = self.manifest.client_display_name
+        core.last_modified_by = self.manifest.client_display_name
+
+        # ── C: Exact A4 page setup + header/footer distances ─────────────
         for section in self.doc.sections:
-            section.top_margin = Cm(self.style.margin_cm("top"))
-            section.bottom_margin = Cm(self.style.margin_cm("bottom"))
-            section.left_margin = Cm(self.style.margin_cm("left"))
-            section.right_margin = Cm(self.style.margin_cm("right"))
+            # Exact A4 twips (spec C)
+            section.page_width = Pt(_A4_WIDTH_TWIPS / 20)    # twips → points → EMU internally
+            section.page_height = Pt(_A4_HEIGHT_TWIPS / 20)
 
-            # Set size
-            pg_size = self.style.page.get("size", "A4").upper()
-            if pg_size == "LETTER":
-                section.page_width = Inches(8.5)
-                section.page_height = Inches(11.0)
-            else:  # A4 default
-                section.page_width = Inches(8.27)
-                section.page_height = Inches(11.69)
+            # 1-inch margins (1440 twips = 72pt each)
+            _margin = Pt(72)  # 1 inch
+            section.top_margin = _margin
+            section.bottom_margin = _margin
+            section.left_margin = _margin
+            section.right_margin = _margin
 
-        # 2. Normal text style
+            # Header/footer distance (708 twips = ~35.4pt)
+            section.header_distance = Pt(708 / 20)
+            section.footer_distance = Pt(708 / 20)
+
+        # ── C: Named style — Normal ───────────────────────────────────────
         normal = self.doc.styles["Normal"]
-        normal.font.name = self.style.body_font
-        normal.font.size = Pt(self.style.body_size)
-        normal.font.color.rgb = hex_to_rgb(self.style.get_color("body_text"))
-        normal.paragraph_format.space_after = Pt(6)
-        normal.paragraph_format.line_spacing = 1.15
+        normal.font.name = self.style.body_font          # Calibri
+        normal.font.size = Pt(self.style.body_size)     # 12pt
+        _body_color = self.style.get_color("body_text")
+        normal.font.color.rgb = hex_to_rgb(_body_color)
 
-        # 3. Setup document-wide headers/footers
+        pf = normal.paragraph_format
+        pf.space_after = Pt(6)
+        pf.line_spacing = 1.15
+        # Justified alignment
+        if self.style.raw.get("layout", {}).get("body_justified", True):
+            pf.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        # Left indent 432 twips = 0.3"
+        indent_twips = self.style.raw.get("layout", {}).get("body_left_indent_twips", 0)
+        if indent_twips:
+            pf.left_indent = Pt(indent_twips / 20)
+
+        # Language tag en-IN on Normal (Spec G)
+        _set_lang(normal, "en-IN")
+
+        # ── C: Named styles — Headings 1–3 ───────────────────────────────
+        for level in range(1, 4):
+            hcfg = self.style.heading_config(level)
+            style_name = f"Heading {level}"
+            try:
+                h_style = self.doc.styles[style_name]
+                h_style.font.name = self.style.heading_font
+                h_style.font.size = Pt(hcfg["size_pt"])
+                h_style.font.bold = hcfg["bold"]
+                h_style.font.color.rgb = hex_to_rgb(hcfg["color"])
+                h_pf = h_style.paragraph_format
+                h_pf.space_before = Pt(hcfg.get("before_pt", 12))
+                h_pf.space_after = Pt(hcfg.get("after_pt", 6))
+                h_pf.keep_with_next = True
+                _set_lang(h_style, "en-IN")
+            except Exception:
+                pass  # Style unavailable in minimal template
+
+        # ── C: Named style — Caption ──────────────────────────────────────
+        try:
+            cap_style = self.doc.styles["Caption"]
+            cap_style.font.name = self.style.body_font
+            cap_style.font.size = Pt(self.style.raw.get("figures", {}).get("caption_size_pt", 9))
+            cap_color = self.style.get_color(
+                self.style.raw.get("figures", {}).get("caption_color", "muted")
+            )
+            cap_style.font.color.rgb = hex_to_rgb(cap_color)
+            cap_style.font.italic = True
+            cap_style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            cap_style.paragraph_format.keep_lines_together = True
+            _set_lang(cap_style, "en-IN")
+        except Exception:
+            pass
+
+        # ── A3: Auto-update fields on open ───────────────────────────────
+        _inject_update_fields(self.doc)
+
+        # ── D: Document-wide headers/footers ─────────────────────────────
         setup_header_footer(self.doc, self.style, self.manifest)
 
     def dispatch_section(self, section: SectionEntry, level: int = 1):
-        """Route section rendering to the correct sub-renderer recursively without mutating state (W18)."""
+        """Route section rendering to the correct sub-renderer recursively."""
         stype = section.type.lower()
-        
-        # Track section numbering
-        # Cover, revision history, TOC and index tables don't count towards numbering
+
         numbered_types = ["prose", "bullet_list", "icon_table", "group", "modules"]
         is_numbered = stype in numbered_types
 
@@ -91,9 +157,13 @@ class GenericBuilder:
         elif stype == "table_of_contents":
             render_toc(self.doc, section, self.manifest, self.style)
         elif stype == "table_of_tables":
-            render_table_of_tables(self.doc, section, self.manifest, self.style)
+            # D4: skip if no tables were captioned
+            if self.numbering.table_count > 0:
+                render_table_of_tables(self.doc, section, self.manifest, self.style)
         elif stype == "table_of_figures":
-            render_table_of_figures(self.doc, section, self.manifest, self.style)
+            # D4: skip if no figures were captioned
+            if self.numbering.figure_count > 0:
+                render_table_of_figures(self.doc, section, self.manifest, self.style)
         elif stype == "prose":
             render_prose(self.doc, section, self.manifest, self.style, heading_text=computed_heading)
         elif stype == "bullet_list":
@@ -101,19 +171,16 @@ class GenericBuilder:
         elif stype == "icon_table":
             render_icon_table(self.doc, section, self.manifest, self.style, heading_text=computed_heading)
         elif stype == "group":
-            # For groups, we pass a callback that calls dispatch_section at level 2
             def nested_dispatch(sub_section):
                 self.dispatch_section(sub_section, level=level + 1)
             render_group(self.doc, section, self.manifest, self.style, nested_dispatch, heading_text=computed_heading)
         elif stype == "modules":
-            # Placed here for pipeline integration
             pass
         else:
             print(f"[Warning] Unknown section type: {stype}")
 
-
     def build_front_matter(self):
-        """Assembles front matter (cover, revision table, TOC, preambles) from manifest."""
+        """Assembles front matter from manifest."""
         for section in self.manifest.sections:
             if section.type.lower() != "modules":
                 self.dispatch_section(section)
@@ -123,7 +190,7 @@ class GenericBuilder:
         render_module(self.doc, session_dir, self.style, self.numbering)
 
     def build_full_manual(self, ordered_session_dirs: list[Path]):
-        """Builds cover, revision history, TOC, SOP, and all session modules together."""
+        """Builds cover, revision history, TOC, and all session modules together."""
         for section in self.manifest.sections:
             if section.type.lower() == "modules":
                 for session_dir in ordered_session_dirs:
@@ -135,3 +202,33 @@ class GenericBuilder:
         """Save the document to disk."""
         output_path.parent.mkdir(parents=True, exist_ok=True)
         self.doc.save(output_path)
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _set_lang(style_obj, lang_code: str = "en-IN") -> None:
+    """Set the language tag on a named paragraph style's rPr element."""
+    try:
+        rpr = style_obj.element.get_or_add_rPr()
+        lang = OxmlElement("w:lang")
+        lang.set(qn("w:val"), lang_code)
+        lang.set(qn("w:eastAsia"), lang_code)
+        rpr.append(lang)
+    except Exception:
+        pass
+
+
+def _inject_update_fields(doc) -> None:
+    """
+    A3: Inject <w:updateFields w:val="true"/> into word/settings.xml so Word
+    refreshes all fields (TOC, page numbers, SEQ) automatically on first open.
+    """
+    try:
+        settings_el = doc.settings.element
+        uf = OxmlElement("w:updateFields")
+        uf.set(qn("w:val"), "true")
+        settings_el.append(uf)
+    except Exception as e:
+        print(f"[Warning] Could not inject updateFields: {e}")
