@@ -1,5 +1,20 @@
+"""
+DocBot v3 — main pipeline entry point.
+
+Run via the launcher UI (``python -m docbot.ui.launcher``) or directly:
+    python main.py [--client <key>]
+"""
+
 import sys
 from pathlib import Path
+
+from loguru import logger
+
+from docbot.logging_setup import setup_logging, attach_session_log
+
+# Initialise logging before anything else
+setup_logging()
+
 from config import load_config
 from capture import run_capture_session
 from detect_regions import process_screen_regions
@@ -12,7 +27,7 @@ from assemble import assemble_module
 def get_provider_instance(config):
     """Instantiates the selected LLM provider based on config.yaml provider setting."""
     provider_name = getattr(config, "provider", "browser").lower()
-    print(f"[Provider] Using: {provider_name}")
+    logger.info(f"[Provider] Using: {provider_name}")
 
     if provider_name == "anthropic":
         from providers.anthropic_api import AnthropicProvider
@@ -29,48 +44,51 @@ def get_provider_instance(config):
         return BrowserProvider()
 
 
-def run_pipeline(client_key: str = None):
+def run_pipeline(client_key: str = None, module_name: str = None, module_number: int = None):
     """Executes the linear pipeline architecture with multi-screen traversal."""
-    print("=======================================================")
-    print("      Documentation Automation Bot - Pipeline Start      ")
-    print("=======================================================")
+    logger.info("=" * 55)
+    logger.info("     Documentation Automation Bot — Pipeline Start     ")
+    logger.info("=" * 55)
 
     config = load_config("config.yaml")
     if client_key:
         config.current_client = client_key
-        print(f"[Config Override] Active Client set to: {client_key}")
-        
+        logger.info(f"[Config Override] Active Client set to: {client_key}")
+
     provider = get_provider_instance(config)
     bot_labeler = Labeler(provider)
 
     # 1. Capture Phase
-    print("\n--- PHASE 1: Capture Session ---")
+    logger.info("--- PHASE 1: Capture Session ---")
     run_capture_session()
 
     # Locate the newly created session folder
     sessions_dir = Path(config.sessions_dir)
     sessions = sorted(sessions_dir.glob("session_*"))
     if not sessions:
-        print("No sessions found to process.")
+        logger.error("No sessions found to process.")
         return
 
     latest_session = sessions[-1]
-    print(f"\nProcessing session data in: {latest_session.name}")
+    logger.info(f"Processing session data in: {latest_session.name}")
+
+    # Attach per-session log file
+    attach_session_log(latest_session)
 
     # Count captured screens
     screens = list(latest_session.glob("screen_*_elements.json"))
     num_screens = len(screens)
 
     if num_screens == 0:
-        print("No screens were captured. Exiting.")
+        logger.warning("No screens were captured. Exiting.")
         return
 
     # 2. Processing & Review Phase (Multi-Screen Loop)
-    print(f"\n--- PHASE 2: Processing {num_screens} Screens ---")
+    logger.info(f"--- PHASE 2: Processing {num_screens} Screens ---")
 
     screen_index = 1
     while 1 <= screen_index <= num_screens:
-        print(f"\n--- Screen {screen_index} of {num_screens} ---")
+        logger.info(f"--- Screen {screen_index} of {num_screens} ---")
 
         # Detect Semantic Regions
         process_screen_regions(latest_session, screen_index)
@@ -78,18 +96,18 @@ def run_pipeline(client_key: str = None):
         # Label Regions via LLM Orchestrator
         bot_labeler.label_screen_regions(latest_session, screen_index)
 
-        # Open the Visual Review UI — it now auto-focuses
-        print(f"Opening Review UI for Screen {screen_index}...")
+        # Open the Visual Review UI
+        logger.info(f"Opening Review UI for Screen {screen_index}...")
         nav_action = open_review_ui(latest_session, screen_index, total_screens=num_screens)
 
-        # Render the final annotated PNG regardless of navigation direction
+        # Render the final annotated PNG
         render_annotations(latest_session, screen_index)
 
         # Handle navigation routing
         if nav_action == "prev" and screen_index > 1:
             screen_index -= 1
         elif nav_action == "quit":
-            print("Session processing manually aborted.")
+            logger.info("Session processing manually aborted.")
             return
         else:
             # Generate prose and field descriptions only when moving forward
@@ -98,27 +116,35 @@ def run_pipeline(client_key: str = None):
 
     # Generate Module Introduction before Assembly
     from manual_builder import load_manifest
-    try:
-        manifest = load_manifest(config.current_client, content_dir=config.content_dir)
-        module_name = manifest.system_name or manifest.client_display_name
-        module_num = 10 # Default fallback
-    except Exception:
-        module_name = "Case Form"
-        module_num = 10
-        
-    bot_labeler.generate_module_intro(latest_session, module_name, module_num)
+    _module_name = module_name
+    _module_number = module_number
+    if not _module_name or _module_number is None:
+        try:
+            manifest = load_manifest(config.current_client, content_dir=config.content_dir)
+            _module_name = _module_name or manifest.system_name or manifest.client_display_name
+        except Exception as e:
+            logger.warning(f"Could not load manifest for module name: {e}")
+            _module_name = _module_name or config.current_client
+
+    bot_labeler.generate_module_intro(latest_session, _module_name, _module_number or 1)
 
     # 3. Assembly Phase
-    print("\n--- PHASE 3: Module Assembly ---")
+    logger.info("--- PHASE 3: Module Assembly ---")
     assemble_module(latest_session)
-    print("\n=======================================================")
-    print("        Module processing completed successfully!        ")
-    print("=======================================================")
+    logger.info("=" * 55)
+    logger.info("       Module processing completed successfully!       ")
+    logger.info("=" * 55)
 
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--client", type=str, default=None, help="Overriding active client key")
+    parser = argparse.ArgumentParser(description="DocBot v3 pipeline")
+    parser.add_argument("--client", type=str, default=None, help="Override active client key")
+    parser.add_argument("--module-name", type=str, default=None, help="Module name for intro generation")
+    parser.add_argument("--module-number", type=int, default=None, help="Module number (overrides manifest)")
     args = parser.parse_args()
-    run_pipeline(client_key=args.client)
+    run_pipeline(
+        client_key=args.client,
+        module_name=args.module_name,
+        module_number=args.module_number,
+    )

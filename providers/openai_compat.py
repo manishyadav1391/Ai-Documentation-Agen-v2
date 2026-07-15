@@ -2,16 +2,20 @@
 
 Supports Groq, OpenAI, Together AI, and any other service with an
 OpenAI-compatible ``/chat/completions`` endpoint.
+
+Vision support uses ``image_url`` data-URI blocks (OpenAI-style).
 """
 
-import json
-import re
-from typing import Any, Dict, List
+import base64
+import time
+from pathlib import Path
+from typing import Any
 
 import httpx
+from loguru import logger
 
 from config import get_config
-from .base import Provider, load_prompt
+from .base import Provider
 
 
 class OpenAICompatProvider(Provider):
@@ -25,16 +29,14 @@ class OpenAICompatProvider(Provider):
         self.base_url = self.provider_cfg.base_url
         self.max_tokens = self.provider_cfg.max_tokens
 
-        headers = {
-            "Content-Type": "application/json",
-        }
+        headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         self.client = httpx.Client(
             base_url=self.base_url,
             headers=headers,
-            timeout=httpx.Timeout(60.0, connect=10.0),
+            timeout=httpx.Timeout(120.0, connect=15.0),
         )
 
     @property
@@ -42,93 +44,75 @@ class OpenAICompatProvider(Provider):
         return "openai_compat"
 
     def is_available(self) -> bool:
-        """Check if API key and base URL are present."""
         return bool(self.base_url and self.api_key)
 
-    # --------------------------------------------------------------------- #
-    # Public interface
-    # --------------------------------------------------------------------- #
-
-
-
-    # --------------------------------------------------------------------- #
-    # Internal helpers
-    # --------------------------------------------------------------------- #
-
-    def _chat(self, prompt: str) -> str:
+    def chat(self, prompt: str, *, max_tokens: int | None = None,
+             temperature: float = 0.2, system: str | None = None) -> str:
         """Call the OpenAI-compatible chat completions endpoint."""
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        return self._call_api(messages, max_tokens=max_tokens or self.max_tokens, temperature=temperature)
+
+    def chat_vision(self, prompt: str, images: list[Path], **kw) -> str:
+        """Send prompt + images as data-URI image_url blocks."""
+        content: list[dict[str, Any]] = []
+        for img_path in images:
+            try:
+                raw = img_path.read_bytes()
+                b64 = base64.b64encode(raw).decode()
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"},
+                })
+            except Exception as e:
+                logger.warning(f"Could not encode image {img_path}: {e}")
+        content.append({"type": "text", "text": prompt})
+
+        messages = []
+        if kw.get("system"):
+            messages.append({"role": "system", "content": kw["system"]})
+        messages.append({"role": "user", "content": content})
+        return self._call_api(messages, max_tokens=kw.get("max_tokens", self.max_tokens),
+                              temperature=kw.get("temperature", 0.2))
+
+    # ------------------------------------------------------------------ #
+    # Internal helpers
+    # ------------------------------------------------------------------ #
+
+    def _call_api(self, messages: list[dict], max_tokens: int, temperature: float) -> str:
+        """POST to /chat/completions with exponential-backoff retry."""
         payload = {
             "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": self.max_tokens,
-            "temperature": 0.2,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
         }
 
-        try:
-            resp = self.client.post("/chat/completions", json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-        except httpx.HTTPError as exc:
-            raise RuntimeError(
-                f"OpenAI-compatible API request failed ({self.base_url}): {exc}"
-            ) from exc
-
-        try:
-            return data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError) as exc:
-            raise ValueError(
-                f"Unexpected response format from {self.base_url}: {data}"
-            ) from exc
-
-    @staticmethod
-    def _parse_json_response(
-        raw: str,
-        original: List[Dict[str, Any]],
-        key: str,
-    ) -> List[Dict[str, Any]]:
-        """Extract JSON array from *raw* and merge *key* into *original*."""
-        text = raw.strip()
-
-        # Try raw JSON first
-        try:
-            parsed = json.loads(text)
-        except json.JSONDecodeError:
-            # Look for a JSON array inside markdown fences or free text
-            match = re.search(r"\[.*\]", text, re.DOTALL)
-            if not match:
-                raise ValueError(
-                    "Could not find JSON array in API response"
-                ) from None
+        delays = [2, 6]
+        for attempt in range(3):
             try:
-                parsed = json.loads(match.group(0))
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    "Found text looking like JSON but could not parse it"
-                ) from exc
-
-        if not isinstance(parsed, list):
-            raise ValueError(
-                f"Expected JSON array, got {type(parsed).__name__}"
-            )
-
-        if len(parsed) != len(original):
-            print(
-                f"[OpenAICompatProvider] Warning: response length mismatch "
-                f"({len(parsed)} vs {len(original)} items)."
-            )
-
-        result: List[Dict[str, Any]] = []
-        for i, item in enumerate(original):
-            merged = dict(item)
-            if i < len(parsed):
-                entry = parsed[i]
-                if isinstance(entry, dict):
-                    merged[key] = entry.get(key, "")
-                elif isinstance(entry, str):
-                    merged[key] = entry
-                else:
-                    merged[key] = str(entry)
-            else:
-                merged[key] = ""
-            result.append(merged)
-        return result
+                resp = self.client.post("/chat/completions", json=payload)
+                if resp.status_code in (429, 500, 502, 503, 504):
+                    if attempt < 2:
+                        wait = delays[attempt]
+                        logger.warning(
+                            f"OpenAI-compat HTTP {resp.status_code} on attempt {attempt + 1}; "
+                            f"retrying in {wait}s…"
+                        )
+                        time.sleep(wait)
+                        continue
+                resp.raise_for_status()
+                data = resp.json()
+                return data["choices"][0]["message"]["content"]
+            except httpx.TimeoutException as exc:
+                if attempt < 2:
+                    wait = delays[attempt]
+                    logger.warning(f"OpenAI-compat timeout on attempt {attempt + 1}; retrying in {wait}s…")
+                    time.sleep(wait)
+                    continue
+                raise RuntimeError(f"OpenAI-compat API timed out after 3 attempts: {exc}") from exc
+            except (KeyError, IndexError) as exc:
+                raise ValueError(f"Unexpected response format from {self.base_url}: {exc}") from exc
+        raise RuntimeError(f"OpenAI-compat API failed after 3 attempts (base_url={self.base_url}).")

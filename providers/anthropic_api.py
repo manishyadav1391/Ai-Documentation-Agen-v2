@@ -1,16 +1,45 @@
 """Anthropic API provider for the Documentation Automation Bot.
 
 Uses Anthropic's native ``/v1/messages`` endpoint via ``httpx``.
+Vision support (base64 PNG image blocks) is implemented but currently
+dormant — enabled automatically when a vision-capable model is configured.
 """
 
-import json
-import re
-from typing import Any, Dict, List
+import base64
+import time
+from pathlib import Path
+from typing import Any
 
 import httpx
+from loguru import logger
 
 from config import get_config
-from .base import Provider, load_prompt
+from .base import Provider
+
+
+_MAX_IMG_LONG_EDGE = 1568  # Anthropic recommended limit
+
+
+def _downscale_image_bytes(img_bytes: bytes, max_edge: int = _MAX_IMG_LONG_EDGE) -> bytes:
+    """Downscale image so the longest edge is at most *max_edge* pixels."""
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(img_bytes))
+        w, h = img.size
+        if max(w, h) <= max_edge:
+            return img_bytes
+        if w >= h:
+            new_w, new_h = max_edge, int(h * max_edge / w)
+        else:
+            new_w, new_h = int(w * max_edge / h), max_edge
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception as e:
+        logger.warning(f"Could not downscale image: {e}")
+        return img_bytes
 
 
 class AnthropicProvider(Provider):
@@ -23,16 +52,14 @@ class AnthropicProvider(Provider):
         self.model = self.provider_cfg.model
         self.max_tokens = self.provider_cfg.max_tokens
 
-        headers = {
-            "Content-Type": "application/json",
-            "x-api-key": self.api_key or "",
-            "anthropic-version": "2023-06-01",
-        }
-
         self.client = httpx.Client(
             base_url="https://api.anthropic.com",
-            headers=headers,
-            timeout=httpx.Timeout(60.0, connect=10.0),
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": self.api_key or "",
+                "anthropic-version": "2023-06-01",
+            },
+            timeout=httpx.Timeout(120.0, connect=15.0),
         )
 
     @property
@@ -40,93 +67,84 @@ class AnthropicProvider(Provider):
         return "anthropic"
 
     def is_available(self) -> bool:
-        """Check if API key is present."""
         return bool(self.api_key)
 
-    # --------------------------------------------------------------------- #
-    # Public interface
-    # --------------------------------------------------------------------- #
+    def chat(self, prompt: str, *, max_tokens: int | None = None,
+             temperature: float = 0.2, system: str | None = None) -> str:
+        """Call Anthropic Messages API with exponential-backoff retry."""
+        return self._call_api(
+            content=[{"type": "text", "text": prompt}],
+            max_tokens=max_tokens or self.max_tokens,
+            temperature=temperature,
+            system=system,
+        )
 
-
-
-    # --------------------------------------------------------------------- #
-    # Internal helpers
-    # --------------------------------------------------------------------- #
-
-    def _chat(self, prompt: str) -> str:
-        """Call Anthropic Messages API."""
-        payload = {
-            "model": self.model,
-            "max_tokens": self.max_tokens,
-            "messages": [{"role": "user", "content": prompt}],
-        }
-
-        try:
-            resp = self.client.post("/v1/messages", json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-        except httpx.HTTPError as exc:
-            raise RuntimeError(
-                f"Anthropic API request failed: {exc}"
-            ) from exc
-
-        try:
-            # Anthropic returns content as a list of blocks
-            return data["content"][0]["text"]
-        except (KeyError, IndexError) as exc:
-            raise ValueError(
-                f"Unexpected Anthropic response format: {data}"
-            ) from exc
-
-    @staticmethod
-    def _parse_json_response(
-        raw: str,
-        original: List[Dict[str, Any]],
-        key: str,
-    ) -> List[Dict[str, Any]]:
-        """Extract JSON array from *raw* and merge *key* into *original*."""
-        text = raw.strip()
-
-        # Try raw JSON first
-        try:
-            parsed = json.loads(text)
-        except json.JSONDecodeError:
-            # Look for a JSON array inside markdown fences or free text
-            match = re.search(r"\[.*\]", text, re.DOTALL)
-            if not match:
-                raise ValueError(
-                    "Could not find JSON array in Anthropic response"
-                ) from None
+    def chat_vision(self, prompt: str, images: list[Path], **kw) -> str:
+        """Send prompt + base64-encoded PNG images in a single API call."""
+        content: list[dict[str, Any]] = []
+        for img_path in images:
             try:
-                parsed = json.loads(match.group(0))
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    "Found text looking like JSON but could not parse it"
-                ) from exc
+                raw = img_path.read_bytes()
+                raw = _downscale_image_bytes(raw)
+                b64 = base64.b64encode(raw).decode()
+                content.append({
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": "image/png", "data": b64},
+                })
+            except Exception as e:
+                logger.warning(f"Could not encode image {img_path}: {e}")
+        content.append({"type": "text", "text": prompt})
+        return self._call_api(
+            content=content,
+            max_tokens=kw.get("max_tokens", self.max_tokens),
+            temperature=kw.get("temperature", 0.2),
+            system=kw.get("system"),
+        )
 
-        if not isinstance(parsed, list):
-            raise ValueError(
-                f"Expected JSON array, got {type(parsed).__name__}"
-            )
+    # ------------------------------------------------------------------ #
+    # Internal helpers
+    # ------------------------------------------------------------------ #
 
-        if len(parsed) != len(original):
-            print(
-                f"[AnthropicProvider] Warning: response length mismatch "
-                f"({len(parsed)} vs {len(original)} items)."
-            )
+    def _call_api(
+        self,
+        content: list[dict],
+        max_tokens: int,
+        temperature: float,
+        system: str | None,
+    ) -> str:
+        """POST to /v1/messages with exponential-backoff retry (3 attempts)."""
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": [{"role": "user", "content": content}],
+        }
+        if system:
+            payload["system"] = system
 
-        result: List[Dict[str, Any]] = []
-        for i, item in enumerate(original):
-            merged = dict(item)
-            if i < len(parsed):
-                entry = parsed[i]
-                if isinstance(entry, dict):
-                    merged[key] = entry.get(key, "")
-                elif isinstance(entry, str):
-                    merged[key] = entry
-                else:
-                    merged[key] = str(entry)
-            else:
-                merged[key] = ""
-            result.append(merged)
-        return result
+        delays = [2, 6]
+        for attempt in range(3):
+            try:
+                resp = self.client.post("/v1/messages", json=payload)
+                if resp.status_code in (429, 500, 502, 503, 504):
+                    if attempt < 2:
+                        wait = delays[attempt]
+                        logger.warning(
+                            f"Anthropic HTTP {resp.status_code} on attempt {attempt + 1}; "
+                            f"retrying in {wait}s…"
+                        )
+                        time.sleep(wait)
+                        continue
+                resp.raise_for_status()
+                data = resp.json()
+                return data["content"][0]["text"]
+            except httpx.TimeoutException as exc:
+                if attempt < 2:
+                    wait = delays[attempt]
+                    logger.warning(f"Anthropic timeout on attempt {attempt + 1}; retrying in {wait}s…")
+                    time.sleep(wait)
+                    continue
+                raise RuntimeError(f"Anthropic API timed out after 3 attempts: {exc}") from exc
+            except (KeyError, IndexError) as exc:
+                raise ValueError(f"Unexpected Anthropic response format: {exc}") from exc
+        raise RuntimeError("Anthropic API failed after 3 attempts.")

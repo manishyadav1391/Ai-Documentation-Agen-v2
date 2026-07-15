@@ -1,4 +1,40 @@
-/venv
+# === Secrets & Environment ===
 .env
-/sessions
-/Final_Manuals
+*.env
+!.env.example
+
+# === Python ===
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+
+# === Session data (may contain client screenshots / PII) ===
+sessions/
+
+# === Built manuals / output ===
+Final_Manuals/
+
+# === Logs ===
+*.log
+logs/
+
+# === IDE / OS ===
+.vscode/
+.idea/
+*.swp
+*~
+Thumbs.db
+.DS_Store
+
+# === Pytest ===
+.pytest_cache/
+.coverage
+htmlcov/
