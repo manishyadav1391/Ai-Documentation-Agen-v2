@@ -195,16 +195,24 @@ class LauncherUI:
 
         tk.Button(client_frame, text="New Client...", bg="#F0FDF4", command=self.new_client).grid(row=0, column=2, sticky="w", padx=5, pady=5)
 
+        # Active LLM Provider selector
+        tk.Label(client_frame, text="LLM Provider:").grid(row=1, column=0, sticky="w", pady=5)
+        self.provider_var = tk.StringVar(value=self.config.provider)
+        self.provider_combo = ttk.Combobox(client_frame, textvariable=self.provider_var, values=["browser", "anthropic", "openai_compat", "ollama"], state="readonly", width=18)
+        self.provider_combo.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        self.provider_combo.bind("<<ComboboxSelected>>", self.on_provider_change)
+
         # Style & Content Config Buttons
         ctrl_btn_frame = tk.Frame(client_frame)
-        ctrl_btn_frame.grid(row=1, column=0, columnspan=3, sticky="w", pady=10)
+        ctrl_btn_frame.grid(row=2, column=0, columnspan=3, sticky="w", pady=10)
         tk.Button(ctrl_btn_frame, text="Branding Settings...", bg="#EFF6FF", font=("Arial", 9, "bold"), command=self.open_style_editor).pack(side=tk.LEFT, padx=5)
         tk.Button(ctrl_btn_frame, text="Open Content Folder...", bg="#F5F5F5", font=("Arial", 9), command=self.open_content_folder).pack(side=tk.LEFT, padx=5)
 
         # Summary Display Label
         self.brand_label = tk.Label(client_frame, text="", font=("Arial", 9), fg="#475569", anchor="w", justify=tk.LEFT)
-        self.brand_label.grid(row=2, column=0, columnspan=3, sticky="w", pady=5)
+        self.brand_label.grid(row=3, column=0, columnspan=3, sticky="w", pady=5)
         self.refresh_brand_summary()
+
 
         # Section 1: Record New Module (Expanded Inputs for Start URL, Name, Number)
         record_frame = tk.LabelFrame(root, text="1. Record New Module", padx=12, pady=10)
@@ -255,6 +263,14 @@ class LauncherUI:
         save_config(self.config)
         reload_config()
         self.refresh_brand_summary()
+
+    def on_provider_change(self, event):
+        provider = self.provider_var.get()
+        self.config.provider = provider
+        save_config(self.config)
+        reload_config()
+        logger.info(f"Active LLM provider updated to: {provider}")
+
 
     def refresh_brand_summary(self):
         try:
