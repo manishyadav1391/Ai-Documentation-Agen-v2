@@ -29,9 +29,27 @@ def assemble_module(session_dir: Path):
     # Render only the session module
     builder.build_module(session_dir)
     
-    output_docx = session_dir / "module_draft.docx"
+    import re
+    from datetime import datetime
+    
+    # Extract timestamp from session_dir name or use current time
+    m = re.search(r"(\d{8}_\d{6})", session_dir.name)
+    timestamp = m.group(1) if m else datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    output_filename = f"final_{client_key}_manual_{timestamp}.docx"
+    output_docx = session_dir / output_filename
+    
     builder.save(output_docx)
-    logger.info(f"Module assembly complete! Saved to {output_docx.name}")
+    logger.info(f"Module assembly complete! Saved to local session: {output_docx}")
+    
+    # Copy to workspace root for easy user access (Issue 2)
+    import shutil
+    try:
+        shutil.copy(output_docx, Path(output_filename))
+        logger.info(f"Copied final manual to workspace root: {output_filename}")
+    except Exception as e:
+        logger.warning(f"Could not copy final manual to workspace root: {e}")
 
     # Run QA PDF check
-    run_qa_check(output_docx)
+    run_qa_check(output_docx)
+

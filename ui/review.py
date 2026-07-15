@@ -656,22 +656,14 @@ class ReviewSessionUI:
         # Push to undo stack
         self._push_undo()
 
-        # Prompt for role/label
-        role_dialog = _RoleDialog(self.root)
-        if not role_dialog.result:
-            # User cancelled role selection
-            return
+        # Prompt for role/label in a single dialog (Issue 1)
+        dialog = _RegionAddDialog(self.root)
+        if not dialog.result:
+            return  # Cancelled
 
-        role = role_dialog.result
+        role = dialog.result["role"]
+        label = dialog.result["label"]
 
-        label = simpledialog.askstring("Region Label", "Enter label name for this region:")
-        if label is None:
-            # User clicked Cancel on label input
-            return
-            
-        label = label.strip()
-        if not label:
-            label = f"{role.replace('_', ' ').title()}"
 
         new_rid = f"r{len(self.screen.regions) + 1}"
         new_region = Region(
@@ -1042,9 +1034,15 @@ class ReviewSessionUI:
         from assemble import assemble_module
         try:
             assemble_module(self.session_dir)
-            messagebox.showinfo("Success", f"Draft module compiled inside {self.session_dir.name}!")
+            import re
+            m = re.search(r"(\d{8}_\d{6})", self.session_dir.name)
+            ts = m.group(1) if m else ""
+            client_key = get_config().current_client
+            doc_name = f"final_{client_key}_manual_{ts}.docx" if ts else "module_draft.docx"
+            messagebox.showinfo("Success", f"Draft module compiled inside {self.session_dir.name} and copied to workspace root as {doc_name}!")
         except Exception as e:
             messagebox.showerror("Error", f"Assembly failed: {e}")
+
 
     def _toggle_preview(self):
         if not hasattr(self, "preview_mode"):
@@ -1100,36 +1098,50 @@ class ReviewSessionUI:
 
 # ── Custom Modal Dialogs ──────────────────────────────────────────────────
 
-class _RoleDialog:
-    """Quick modal dialog to pick a region semantic role."""
+class _RegionAddDialog:
+    """Single modal dialog to pick semantic role and enter label name together."""
     def __init__(self, parent):
         self.result = None
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title("Select Region Role")
-        self.dialog.geometry("300x200")
+        self.dialog.title("Add Region Details")
+        self.dialog.geometry("380x220")
         self.dialog.resizable(False, False)
         self.dialog.grab_set()
 
-        ttk.Label(self.dialog, text="Pick semantic role:", font=("Segoe UI", 10, "bold")).pack(pady=10)
+        pad = dict(padx=15, pady=8, sticky=tk.W)
 
+        # Label Entry
+        ttk.Label(self.dialog, text="Region Label:", font=("Segoe UI", 10)).grid(row=0, column=0, **pad)
+        self.label_entry = ttk.Entry(self.dialog, width=28, font=("Segoe UI", 10))
+        self.label_entry.grid(row=0, column=1, **pad)
+        self.label_entry.focus_set()
+
+        # Role Combo
+        ttk.Label(self.dialog, text="Semantic Role:", font=("Segoe UI", 10)).grid(row=1, column=0, **pad)
         self.role_var = tk.StringVar(value="filter_form")
-        roles = ["filter_form", "action_button", "action_group", "table_header", "view_only"]
-        self.combo = ttk.Combobox(self.dialog, textvariable=self.role_var, values=roles, state="readonly")
-        self.combo.pack(pady=10)
+        roles = ["filter_form", "action_button", "action_group", "action_column", "table_header", "view_only", "page_header", "navigation_bar", "section_heading"]
+        self.combo = ttk.Combobox(self.dialog, textvariable=self.role_var, values=roles, state="readonly", font=("Segoe UI", 10), width=26)
+        self.combo.grid(row=1, column=1, **pad)
 
+        # Buttons
         btn_frame = ttk.Frame(self.dialog)
-        btn_frame.pack(pady=15)
-        ttk.Button(btn_frame, text="Select", command=self._on_select).pack(side=tk.LEFT, padx=5)
+        btn_frame.grid(row=2, column=0, columnspan=2, pady=15)
+        ttk.Button(btn_frame, text="Add Region", style="Accent.TButton", command=self._on_save).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Cancel", command=self.dialog.destroy).pack(side=tk.LEFT, padx=5)
 
-        
         # Center in parent
         self.dialog.transient(parent)
-        parent.wait_window(self.dialog)
+        self.dialog.wait_window(self.dialog)
 
-    def _on_select(self):
-        self.result = self.role_var.get()
+    def _on_save(self):
+        lbl = self.label_entry.get().strip()
+        role = self.role_var.get()
+        if not lbl:
+            # Generate default label if empty
+            lbl = f"{role.replace('_', ' ').title()}"
+        self.result = {"role": role, "label": lbl}
         self.dialog.destroy()
+
 
 
 class _FieldEditDialog:

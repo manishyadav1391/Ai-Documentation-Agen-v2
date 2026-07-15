@@ -179,9 +179,14 @@ class CaptureSession:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         session_id = ts
         if session_dir is None:
-            session_dir = cfg.sessions_path / f"session_{ts}"
+            # Clean module name for filesystem
+            clean_module = "".join(c if c.isalnum() else "_" for c in module_name).strip("_")
+            prefix = f"{clean_module}_{ts}" if clean_module else f"session_{ts}"
+            session_dir = cfg.sessions_path / prefix
+            
         session_dir.mkdir(parents=True, exist_ok=True)
         self.session_dir = session_dir
+
         attach_session_log(session_dir)
 
         self.session = SessionModel(
@@ -608,4 +613,7 @@ def run_capture_session(
         module_name=module_name,
         module_number=module_number,
     )
-    return session.run()
+    model = session.run()
+    model._session_dir = session.session_dir
+    return model
+

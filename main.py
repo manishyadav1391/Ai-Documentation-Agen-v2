@@ -62,23 +62,28 @@ def run_pipeline(client_key: str = None, start_url: str = None, module_name: str
 
     # 1. Capture Phase
     logger.info("--- PHASE 1: Capture Session ---")
-    run_capture_session(
+    session_model = run_capture_session(
         start_url=start_url or "https://google.com",
         client_key=config.current_client,
         module_name=module_name or "",
         module_number=module_number
     )
 
+    # Locate the newly created session folder (Issue 2)
+    latest_session = getattr(session_model, "_session_dir", None)
+    if not latest_session:
+        # Fallback to search sessions directory for the most recently modified subdirectory
+        sessions_dir = Path(config.sessions_dir)
+        sessions = sorted(sessions_dir.iterdir(), key=lambda p: p.stat().st_mtime)
+        # filter directories only, ignoring hidden/internal ones
+        sessions = [s for s in sessions if s.is_dir() and not s.name.startswith(".")]
+        if not sessions:
+            logger.error("No sessions found to process.")
+            return
+        latest_session = sessions[-1]
 
-    # Locate the newly created session folder
-    sessions_dir = Path(config.sessions_dir)
-    sessions = sorted(sessions_dir.glob("session_*"))
-    if not sessions:
-        logger.error("No sessions found to process.")
-        return
-
-    latest_session = sessions[-1]
     logger.info(f"Processing session data in: {latest_session.name}")
+
 
     # Attach per-session log file
     attach_session_log(latest_session)
