@@ -72,7 +72,13 @@ class StyleConfigDialog(tk.Toplevel):
         with self.style_path.open("r", encoding="utf-8") as f:
             self.style_data = yaml.safe_load(f) or {}
 
+        # Force null sections to dict to prevent AttributeError / TypeError when saving settings
+        for key in ["fonts", "colors", "logo"]:
+            if key not in self.style_data or not isinstance(self.style_data[key], dict):
+                self.style_data[key] = {}
+
         self.build_ui()
+
 
     def build_ui(self):
         main_frame = tk.Frame(self, padx=15, pady=15)
@@ -87,13 +93,13 @@ class StyleConfigDialog(tk.Toplevel):
         # Font Combo
         tk.Label(style_frame, text="Font Family:").grid(row=0, column=0, sticky="w", pady=5)
         self.font_combo = ttk.Combobox(style_frame, values=["Segoe UI", "Arial", "Calibri", "Georgia", "Times New Roman"], state="readonly", width=18)
-        self.font_combo.set(self.style_data.get("fonts", {}).get("body_family", "Segoe UI"))
+        self.font_combo.set(self.style_data["fonts"].get("body_family", "Segoe UI"))
         self.font_combo.grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
         # Primary Color
         tk.Label(style_frame, text="Primary Color (Hex):").grid(row=1, column=0, sticky="w", pady=5)
         self.primary_entry = tk.Entry(style_frame, width=12)
-        primary_val = self.style_data.get("colors", {}).get("primary", "1B365D")
+        primary_val = self.style_data["colors"].get("primary", "1B365D")
         if not primary_val.startswith("#"):
             primary_val = f"#{primary_val}"
         self.primary_entry.insert(0, primary_val)
@@ -103,7 +109,7 @@ class StyleConfigDialog(tk.Toplevel):
         # Secondary Color
         tk.Label(style_frame, text="Secondary Color (Hex):").grid(row=2, column=0, sticky="w", pady=5)
         self.secondary_entry = tk.Entry(style_frame, width=12)
-        secondary_val = self.style_data.get("colors", {}).get("secondary", "D97706")
+        secondary_val = self.style_data["colors"].get("secondary", "D97706")
         if not secondary_val.startswith("#"):
             secondary_val = f"#{secondary_val}"
         self.secondary_entry.insert(0, secondary_val)
@@ -113,9 +119,10 @@ class StyleConfigDialog(tk.Toplevel):
         # Logo Path
         tk.Label(style_frame, text="Company Logo:").grid(row=3, column=0, sticky="w", pady=5)
         self.logo_entry = tk.Entry(style_frame, width=28)
-        self.logo_entry.insert(0, self.style_data.get("logo", {}).get("path", ""))
+        self.logo_entry.insert(0, self.style_data["logo"].get("path", ""))
         self.logo_entry.grid(row=3, column=1, columnspan=2, sticky="w", padx=5, pady=5)
         tk.Button(style_frame, text="Browse...", command=self.browse_logo).grid(row=3, column=3, sticky="w", padx=2, pady=5)
+
 
         # --- Bottom Buttons ---
         btn_frame = tk.Frame(main_frame)
