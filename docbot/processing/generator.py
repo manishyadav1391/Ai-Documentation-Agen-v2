@@ -371,7 +371,8 @@ def _merge_result_into_screen(
     content_hash: str,
 ) -> None:
     """Merge LLM result by id into the screen model."""
-    from docbot.models import Field, Step, Region, ScreenContent
+    from docbot.models import FieldDetail, Step, Region, ScreenContent
+
 
     # Update content fields
     screen.content.screen_name = result.screen_name or screen.content.screen_name
