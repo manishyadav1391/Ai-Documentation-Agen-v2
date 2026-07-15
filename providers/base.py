@@ -1,71 +1,86 @@
 """
-Provider base layer for the Documentation Automation Bot.
+Provider base layer for DocBot v3.
 
-Defines the abstract interface that every LLM provider must implement,
-plus a small helper for loading prompt templates from disk.
+Defines the abstract interface every LLM provider must implement.
+Providers are pure transport — no UI imports, no tkinter, no config UI.
+
+Interface summary
+-----------------
+- ``chat(prompt, *, max_tokens, temperature, system)`` → str
+- ``chat_vision(prompt, images, **kw)`` → str  (default: text-only fallback)
+- ``chat_json(prompt, schema, images, **kw)`` → BaseModel instance
+  (strips fences, validates, retries once on ValidationError)
+
+Helper
+------
+- ``load_prompt(name, version, **kwargs)`` — load from ``prompts/{version}/``
 """
 
 import json
+import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Type, TypeVar
+
+from loguru import logger
+from pydantic import BaseModel, ValidationError
+
+# Root of the project (one directory up from providers/)
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+T = TypeVar("T", bound=BaseModel)
 
 
-@dataclass
-class RegionForLabeling:
-    role: str
-    candidate_labels: List[str]
+class GenerationError(RuntimeError):
+    """Raised when the LLM fails to produce valid output after retries."""
 
 
-@dataclass
-class FieldForDescribing:
-    name: str
-    type: str
-    required: bool
-    placeholder: str = None
-    validation: str = None
-
-
-def load_prompt(template_name: str, **kwargs: Any) -> str:
+def load_prompt(name: str, version: str = "v3", **kwargs: Any) -> str:
     """
-    Load a prompt template from ``providers/prompts/`` and substitute
-    placeholders.
+    Load a prompt template and substitute ``{key}`` placeholders.
+
+    Search order:
+    1. ``prompts/{version}/{name}.txt``  (v3 default)
+    2. ``providers/prompts/{name}.txt``  (legacy v2 fallback)
 
     Args:
-        template_name: File name without extension (e.g. ``label_regions``).
-        **kwargs: String placeholders to replace in the template.
+        name:    Template name without extension (e.g. ``screen_documentation``).
+        version: Prompt version directory (default ``"v3"``).
+        **kwargs: Placeholder substitutions.
 
     Returns:
-        The fully populated prompt string.
+        Fully populated prompt string.
 
     Raises:
-        FileNotFoundError: If the requested template does not exist.
+        FileNotFoundError: If the template cannot be found in either location.
     """
-    prompts_dir = Path(__file__).parent / "prompts"
-    template_path = prompts_dir / f"{template_name}.txt"
+    candidates = [
+        _REPO_ROOT / "prompts" / version / f"{name}.txt",
+        _REPO_ROOT / "providers" / "prompts" / f"{name}.txt",
+    ]
+    for path in candidates:
+        if path.exists():
+            text = path.read_text(encoding="utf-8")
+            for k, v in kwargs.items():
+                text = text.replace(f"{{{k}}}", str(v))
+            return text
 
-    if not template_path.exists():
-        raise FileNotFoundError(f"Prompt template not found: {template_path}")
-
-    text = template_path.read_text(encoding="utf-8")
-
-    if kwargs:
-        for k, v in kwargs.items():
-            text = text.replace(f"{{{k}}}", str(v))
-
-    return text
+    raise FileNotFoundError(
+        f"Prompt template '{name}' not found. Searched:\n" +
+        "\n".join(f"  {p}" for p in candidates)
+    )
 
 
 class Provider(ABC):
     """
     Abstract interface for all LLM-assisted generation backends.
 
-    Concrete implementations include:
-    - BrowserProvider (copy-paste to claude.ai)
-    - AnthropicProvider (native API)
-    - OpenAICompatProvider (Groq, Together AI, etc.)
-    - OllamaProvider (local / remote Ollama endpoint)
+    Concrete implementations:
+    - BrowserProvider      — copy-paste to claude.ai
+    - BrowserBatchProvider — session-level batch (1 paste per session)
+    - AnthropicProvider    — Anthropic Messages API
+    - OpenAICompatProvider — OpenAI-compatible endpoint (Groq, etc.)
+    - OllamaProvider       — Ollama local / cloud via httpx
     """
 
     @property
@@ -77,309 +92,166 @@ class Provider(ABC):
     @abstractmethod
     def is_available(self) -> bool:
         """
-        Return ``True`` if the provider is configured and ready to use.
+        Return True if the provider is configured and ready.
 
-        For API providers this usually means an API key is present.
-        For browser mode this is always ``True``.
+        For API providers: API key is present.
+        For browser modes: always True.
         """
         ...
 
-    def generate_labels(
-        self, regions: List[Dict[str, Any]],
-        app_name: str = "", page_title: str = "", breadcrumb: str = ""
-    ) -> List[Dict[str, Any]]:
-        """Accepts detected regions and returns them with ``label`` (and optional ``screen_title``) keys added."""
-        prompt = load_prompt(
-            "label_regions",
-            regions_json=self._to_json(regions),
-            app_name=app_name or "Enterprise Application",
-            page_title=page_title or "Unknown Page",
-            breadcrumb=breadcrumb or "",
-        )
-        from llm_ui import request_llm_processing
-        from config import get_config
-        cfg = get_config()
-
-        result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=True)
-        if result is None:
-            raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
-
-        merged_regions = []
-        for i, item in enumerate(regions):
-            merged = dict(item)
-            if i < len(result):
-                entry = result[i]
-                if isinstance(entry, dict):
-                    merged["label"] = entry.get("label", "")
-                    # Only the first item carries a screen_title suggestion
-                    if i == 0:
-                        merged["screen_title"] = entry.get("screen_title", "")
-                else:
-                    merged["label"] = str(entry)
-            else:
-                merged["label"] = ""
-            merged_regions.append(merged)
-        return merged_regions
-
-    def generate_field_descriptions(
-        self, fields: List[Dict[str, Any]],
-        app_name: str = "", page_title: str = "", screen_name: str = ""
-    ) -> List[Dict[str, Any]]:
-        """Accepts form fields and returns them with a ``description`` key added."""
-        prompt = load_prompt(
-            "describe_fields",
-            fields_json=self._to_json(fields),
-            app_name=app_name or "Enterprise Application",
-            page_title=page_title or "Unknown Page",
-            screen_name=screen_name or page_title or "Unknown Screen",
-        )
-        from llm_ui import request_llm_processing
-        from config import get_config
-        cfg = get_config()
-
-        result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=True)
-        if result is None:
-            raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
-
-        merged_fields = []
-        for i, item in enumerate(fields):
-            merged = dict(item)
-            if i < len(result):
-                entry = result[i]
-                if isinstance(entry, dict):
-                    merged["description"] = entry.get("description", "")
-                else:
-                    merged["description"] = str(entry)
-            else:
-                merged["description"] = ""
-            merged_fields.append(merged)
-        return merged_fields
-
-    def generate_field_descriptions_rich(
-        self, fields: List[Dict[str, Any]],
-        app_name: str = "", page_title: str = "", screen_name: str = ""
-    ) -> List[Dict[str, Any]]:
-        """Accepts form fields and returns them as a list of dictionaries with 4 columns: field_name, utility, information, sample."""
-        prompt = load_prompt(
-            "describe_fields_rich",
-            fields_json=self._to_json(fields),
-            app_name=app_name or "Enterprise Application",
-            page_title=page_title or "Unknown Page",
-            screen_name=screen_name or page_title or "Unknown Screen",
-        )
-        from llm_ui import request_llm_processing
-        from config import get_config
-        cfg = get_config()
-
-        result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=True)
-        if result is None:
-            raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
-
-        merged_fields = []
-        for i, item in enumerate(fields):
-            merged = dict(item)
-            if i < len(result):
-                entry = result[i]
-                if isinstance(entry, dict):
-                    merged["field_name"] = entry.get("field_name", item.get("accessible_name", ""))
-                    merged["utility"] = entry.get("utility", "")
-                    merged["information"] = entry.get("information", "")
-                    merged["sample"] = entry.get("sample", "")
-                else:
-                    merged["field_name"] = item.get("accessible_name", "")
-                    merged["utility"] = str(entry)
-                    merged["information"] = "Data input"
-                    merged["sample"] = "Sample text"
-            else:
-                merged["field_name"] = item.get("accessible_name", "")
-                merged["utility"] = ""
-                merged["information"] = ""
-                merged["sample"] = ""
-            merged_fields.append(merged)
-        return merged_fields
-
-    def generate_screen_purpose(
-        self, screen_context: Dict[str, Any]
-    ) -> str:
-        """Generates a one-sentence purpose statement for a screen."""
-        prompt = load_prompt(
-            "screen_purpose",
-            screen_context_json=self._to_json(screen_context)
-        )
-        from llm_ui import request_llm_processing
-        from config import get_config
-        cfg = get_config()
-
-        result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=False)
-        if result is None:
-            raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
-
-        return result.strip()
-
-    def generate_module_intro(
-        self, module_name: str, screens: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """Generates the module introduction paragraph and feature bullet list."""
-        prompt = load_prompt(
-            "module_intro",
-            module_name=module_name,
-            screens_json=self._to_json(screens)
-        )
-        from llm_ui import request_llm_processing
-        from config import get_config
-        cfg = get_config()
-
-        result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=True)
-        if result is None:
-            raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
-
-        if isinstance(result, dict):
-            return result
-        return {"intro": "", "features": []}
-
-    def generate_screen_documentation(
+    @abstractmethod
+    def chat(
         self,
-        controls: Dict[str, Any],
-        app_name: str = "",
-        page_title: str = "",
-        screen_name: str = "",
-        breadcrumb: str = "",
-        screen_type: str = ""
-    ) -> Dict[str, Any]:
-        """Generates structured screen documentation JSON from grouped controls."""
-        prompt = load_prompt(
-            "screen_documentation",
-            controls_json=self._to_json(controls),
-            app_name=app_name or "Enterprise Application",
-            page_title=page_title or "Unknown Page",
-            screen_name=screen_name or page_title or "Unknown Screen",
-            breadcrumb=breadcrumb or "",
-            screen_type=screen_type or "unknown"
-        )
-        from llm_ui import request_llm_processing
-        from config import get_config
-        cfg = get_config()
-
-        result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=True)
-        if result is None:
-            raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
-
-        if isinstance(result, dict):
-            return result
-
-        return {}
-
-    def generate_procedure_prose(
-        self, screens: List[Dict[str, Any]],
-        app_name: str = "", screen_name: str = "",
-        page_title: str = "", breadcrumb: str = ""
+        prompt: str,
+        *,
+        max_tokens: int = 8000,
+        temperature: float = 0.2,
+        system: str | None = None,
     ) -> str:
-        """Accepts a sequence of screen metadata and returns procedure prose."""
-        prompt = load_prompt(
-            "procedure_prose",
-            screens_json=self._to_json(screens),
-            app_name=app_name or "Enterprise Application",
-            screen_name=screen_name or page_title or "Unknown Screen",
-            page_title=page_title or "Unknown Page",
-            breadcrumb=breadcrumb or "",
+        """
+        Send a text prompt and return the model's response as a string.
+
+        Args:
+            prompt:      The user message content.
+            max_tokens:  Maximum response tokens (default 8000).
+            temperature: Sampling temperature (default 0.2).
+            system:      Optional system-level instruction.
+
+        Returns:
+            Raw response text from the model.
+        """
+        ...
+
+    def chat_vision(
+        self,
+        prompt: str,
+        images: list[Path],
+        **kw,
+    ) -> str:
+        """
+        Send a prompt with images and return the model's response.
+
+        Default implementation: logs a warning and falls back to text-only
+        ``chat()``. Override in providers that support vision.
+
+        Args:
+            prompt: The user message.
+            images: List of PNG file paths to include.
+            **kw:   Forwarded to ``chat()`` (max_tokens, temperature, system).
+
+        Returns:
+            Raw response text from the model.
+        """
+        logger.warning(
+            f"[{self.name}] chat_vision called but not implemented for this provider. "
+            "Falling back to text-only chat (screenshots omitted)."
         )
-        from llm_ui import request_llm_processing
-        from config import get_config
-        cfg = get_config()
+        return self.chat(prompt, **kw)
 
-        result = request_llm_processing(prompt, default_provider=cfg.provider, is_json=False)
-        if result is None:
-            raise KeyboardInterrupt("User cancelled or aborted the prompt review.")
+    def chat_json(
+        self,
+        prompt: str,
+        schema: Type[T],
+        images: list[Path] | None = None,
+        **kw,
+    ) -> T:
+        """
+        Call the model and parse the response as a pydantic v2 model.
 
-        return result
+        Steps:
+        1. Call ``chat_vision`` (with images) or ``chat`` (without).
+        2. Strip markdown fences (```json … ```).
+        3. ``json.loads`` + ``schema.model_validate``.
+        4. On ``ValidationError``: retry ONCE, appending the error details
+           to the prompt ("Your previous output failed validation: …").
+        5. On second failure: raise ``GenerationError``.
+
+        Args:
+            prompt: The user prompt.
+            schema: A pydantic BaseModel subclass to validate against.
+            images: Optional list of PNG paths (forwarded to chat_vision).
+            **kw:   max_tokens, temperature, system — forwarded to chat.
+
+        Returns:
+            A validated instance of *schema*.
+
+        Raises:
+            GenerationError: If the model fails to produce valid JSON twice.
+        """
+        for attempt in range(2):
+            current_prompt = prompt
+            if attempt == 1:
+                # Append validation error context for the retry
+                current_prompt = (
+                    f"{prompt}\n\n"
+                    f"Your previous output failed JSON validation with this error:\n"
+                    f"  {self._last_validation_error}\n"
+                    f"Return ONLY the corrected JSON object. No markdown, no explanation."
+                )
+
+            try:
+                if images:
+                    raw = self.chat_vision(current_prompt, images, **kw)
+                else:
+                    raw = self.chat(current_prompt, **kw)
+            except Exception as exc:
+                raise GenerationError(
+                    f"[{self.name}] chat call failed on attempt {attempt + 1}: {exc}"
+                ) from exc
+
+            # Strip fences
+            text = _strip_fences(raw)
+
+            try:
+                data = json.loads(text)
+                return schema.model_validate(data)
+            except json.JSONDecodeError as e:
+                self._last_validation_error = f"JSON parse error: {e} — raw snippet: {text[:300]}"
+                logger.warning(
+                    f"[{self.name}] JSON decode failed on attempt {attempt + 1}: {e}"
+                )
+            except ValidationError as e:
+                self._last_validation_error = str(e)
+                logger.warning(
+                    f"[{self.name}] Pydantic validation failed on attempt {attempt + 1}: {e}"
+                )
+
+        raise GenerationError(
+            f"[{self.name}] Failed to produce valid JSON matching {schema.__name__} "
+            f"after 2 attempts. Last error: {self._last_validation_error}"
+        )
+
+    # ------------------------------------------------------------------ #
+    # Private helpers
+    # ------------------------------------------------------------------ #
+
+    _last_validation_error: str = ""
 
     @staticmethod
     def _to_json(data: Any) -> str:
-        """Helper: pretty-print a Python object as compact JSON."""
+        """Pretty-print a Python object as compact JSON."""
         return json.dumps(data, indent=2, ensure_ascii=False)
 
-    def label_regions(
-        self, regions: List[RegionForLabeling],
-        app_name: str = "", page_title: str = "", breadcrumb: str = ""
-    ) -> List[str]:
-        raw_regions = []
-        for r in regions:
-            raw_regions.append({
-                "role": r.role,
-                "elements_contained": r.candidate_labels
-            })
-        labeled_regions = self.generate_labels(
-            raw_regions, app_name=app_name, page_title=page_title, breadcrumb=breadcrumb
-        )
-        return [r.get("label", "") for r in labeled_regions]
 
-    def label_regions_with_title(
-        self, regions: List[RegionForLabeling],
-        app_name: str = "", page_title: str = "", breadcrumb: str = ""
-    ) -> tuple:
-        """Like label_regions but also returns the suggested screen title.
-
-        Returns:
-            (labels: List[str], suggested_screen_title: str)
-        """
-        raw_regions = []
-        for r in regions:
-            raw_regions.append({
-                "role": r.role,
-                "elements_contained": r.candidate_labels
-            })
-        labeled_regions = self.generate_labels(
-            raw_regions, app_name=app_name, page_title=page_title, breadcrumb=breadcrumb
-        )
-        labels = [r.get("label", "") for r in labeled_regions]
-        suggested_title = labeled_regions[0].get("screen_title", "") if labeled_regions else ""
-        return labels, suggested_title
-
-    def describe_fields(
-        self, fields: List[FieldForDescribing],
-        app_name: str = "", page_title: str = "", screen_name: str = ""
-    ) -> List[str]:
-        raw_fields = []
-        for f in fields:
-            raw_fields.append({
-                "accessible_name": f.name,
-                "type": f.type,
-                "required": f.required,
-                "placeholder": f.placeholder,
-                "pattern": f.validation
-            })
-        described_fields = self.generate_field_descriptions(
-            raw_fields, app_name=app_name, page_title=page_title, screen_name=screen_name
-        )
-        return [f.get("description", "") for f in described_fields]
-
-    def describe_fields_rich(
-        self, fields: List[FieldForDescribing],
-        app_name: str = "", page_title: str = "", screen_name: str = ""
-    ) -> List[Dict[str, Any]]:
-        raw_fields = []
-        for f in fields:
-            raw_fields.append({
-                "accessible_name": f.name,
-                "type": f.type,
-                "required": f.required,
-                "placeholder": f.placeholder,
-                "pattern": f.validation
-            })
-        return self.generate_field_descriptions_rich(
-            raw_fields, app_name=app_name, page_title=page_title, screen_name=screen_name
-        )
-
-    def procedure_prose(
-        self, actions: List[Dict[str, Any]], context: str,
-        app_name: str = "", screen_name: str = "",
-        page_title: str = "", breadcrumb: str = ""
-    ) -> str:
-        screens = [{"context": context, "actions": actions}]
-        return self.generate_procedure_prose(
-            screens, app_name=app_name, screen_name=screen_name,
-            page_title=page_title, breadcrumb=breadcrumb
-        )
-
-
+# Alias for backward compatibility with any remaining legacy imports
 LLMProvider = Provider
+
+
+def _strip_fences(text: str) -> str:
+    """
+    Remove markdown code fences from LLM output.
+
+    Handles:
+    - ```json\\n…\\n```
+    - ```\\n…\\n```
+    - Inline leading/trailing whitespace
+    """
+    text = text.strip()
+    # Match ```<optional lang>\\n...\\n```
+    match = re.match(r"^```(?:json)?\s*\n?(.*?)\n?```\s*$", text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    # Also strip single-backtick wraps
+    if text.startswith("`") and text.endswith("`"):
+        return text[1:-1].strip()
+    return text

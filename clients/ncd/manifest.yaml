@@ -1,0 +1,26 @@
+client_key: ncd
+client_display_name: "NCD"
+system_name: "NCD System"
+system_acronym: "NCD"
+role_name: "User"
+manual_title: "NCD System User Manual"
+version: "1.0"
+numbering_mode: continuous    # W5/W6: 1, 2, 3 continuously across all modules
+
+sections:
+  - id: cover
+    type: cover
+    source: cover.yaml
+  - id: revision_history
+    type: revision_history
+    source: revision_history.yaml
+  - id: toc
+    type: table_of_contents
+  - id: table_of_figures
+    type: table_of_figures
+  - id: introduction
+    type: prose
+    heading: "Introduction"
+    source: introduction.md
+  - id: modules
+    type: modules

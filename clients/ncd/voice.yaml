@@ -1,0 +1,28 @@
+app_name: NCD System
+tone_rules:
+  - Use formal, professional, third-person imperative.
+  - Sentences should be concise and direct.
+  - Do not use contractions.
+  - Field names must match labels shown on screen exactly.
+  - Use active voice throughout.
+  - Navigation instructions should name the exact menu path.
+
+examples:
+  purpose:
+    - "The Login screen enables users to securely access the NCD System using their assigned credentials."
+    - "The Dashboard screen displays a summary of registered patients and active cases across all facilities."
+  step:
+    - "Click on the Login button to proceed."
+    - "Enter the following details:"
+    - "  Username — Enter the assigned user login name."
+    - "  Password — Enter the account password."
+    - "The Home page will be displayed."
+    - "Select NCD Records from the main navigation menu."
+  field:
+    - "Facility — Select the health facility from the dropdown list."
+    - "Date of Visit — Enter the date of the patient's visit in DD/MM/YYYY format."
+
+navigation_template: "Select {screen_name} option from {parent_menu} as shown in the image below;"
+notes_block: |
+  Note: The system requires a stable internet connection. If you experience any issues
+  accessing the system, contact your system administrator.

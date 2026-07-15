@@ -2,34 +2,36 @@ provider: browser
 default_template: corporate
 current_client: ncb
 content_dir: content
+clients_dir: clients
 styles_dir: styles
 sessions_dir: sessions
+
 providers:
   browser:
     editor_command: notepad
   anthropic:
     api_key_env: ANTHROPIC_API_KEY
-    model: claude-3-5-sonnet-20241022
-    max_tokens: 1000
+    model: claude-sonnet-4-6
+    max_tokens: 8000
   openai_compat:
     api_key_env: OPENAI_API_KEY
     base_url: https://api.groq.com/openai/v1
     model: llama-3.3-70b-versatile
-    max_tokens: 1000
+    max_tokens: 8000
   ollama:
     host: https://ollama.com
     model: gpt-oss:120b
     api_key_env: OLLAMA_API_KEY
+    max_tokens: 8000
+
 render:
   label_font_size: 20
   region_stroke_width: 3
   callout_border_width: 2
-theme:
-  font_name: Georgia
-  primary_color: 1B365D
-  secondary_color: D97706
-  text_color: '333333'
-  logo_path: C:/Users/stadmin/Downloads/National-Emblem-of-India.jpg
-  company_name: orangehrms
-  subtitle: Comprehensive User Guide & Technical Documentation
-  app_name: OrangeHRM Portal
+
+capture:
+  mode: viewport
+  scroll_capture: true
+
+# Note: The "theme" block has been removed in v3.
+# Branding is now controlled per-client via clients/<key>/style.yaml

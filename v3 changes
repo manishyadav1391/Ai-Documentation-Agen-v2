@@ -1,0 +1,367 @@
+# DocBot v3 — Implementation Plan
+
+## Background
+
+The existing `doc_automation_v2` repository is a working but architecturally fragile documentation automation pipeline. This plan transforms it into the world-class v3 platform described in the spec, fixing all W1–W30 defects while keeping the pipeline runnable after every phase.
+
+The repo currently sits flat (all `.py` files at root), with providers, manual_builder, ui, styles, content, and templates as subdirectories.
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Provider reality:** The only working provider is `ollama` (Ollama cloud endpoint, model `gpt-oss:120b`, key via `OLLAMA_API_KEY`). This model is TEXT-ONLY. Vision is implemented but dormant; the v3 prompt phrases vision conditionally. All generation produces correct output via the text path. This is by spec.
+
+> [!WARNING]
+> **Git history:** The plan calls for `git rm -r --cached` on `.env`, `venv/`, `__pycache__/`, `sessions/`, and `Final_Manuals/`. This removes them from tracking but does NOT delete local files. The previously committed `OLLAMA_API_KEY` must be rotated by the owner — a note goes in the README (the spec explicitly requires this).
+
+> [!WARNING]
+> **File reorganization:** The plan restructures directories significantly (`content/` + `styles/` → `clients/`, flat root `.py` files → `docbot/` package, `providers/prompts/` → `prompts/v3/`). Import shims are left until Phase 7 so the app stays runnable at each phase boundary. This means `labeler.py`, `detect_regions.py`, etc. will temporarily re-export from their new homes.
+
+> [!CAUTION]
+> **Review UI rewrite (Phase 7):** `review_ui.py` (33 KB) is completely rewritten. The spec mandates this. Any session data the writer has already reviewed in the old UI will be preserved via `session.json`/`migrate_legacy`. Old review state (the `_final.json` per screen) is migrated.
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]
+> **Q1 — `sessions/` data:** There are existing sessions in `sessions/`. Should `migrate_legacy` run automatically on startup (reading old `screen_N_*.json` files into `session.json`) or only when the writer explicitly opens an old session in the review UI? The plan assumes **automatic migration on session open**.
+
+> [!IMPORTANT]
+> **Q2 — Module numbering for NCD:** The spec's continuous numbering example (2 Login, 3 Dashboard, 4.4.1 Cooperatives…) implies that *some* modules are a single screen (numbered at top level) and others contain multiple screens (numbered as subsections). The rule proposed: "if the module has exactly one screen, that screen IS the level-1 section." Is this correct for NCD, or should level-1 always be the module and screens always be level-2?
+
+> [!IMPORTANT]
+> **Q3 — Capture mode default:** The spec says default `mode: viewport`. The existing code always uses `full_page=True`. Switching the default will change the look of screenshots for existing sessions. Should existing sessions keep their screenshots untouched (only new captures use viewport mode), or should the default be `full_page` for backward compat and writers opt in to viewport?
+
+---
+
+## Proposed Changes
+
+### Phase 1 — Hygiene, Logging, Dead Code (W1–W3, W15-part, W28-part)
+
+---
+
+#### [MODIFY] [.gitignore](file:///c:/doc_automation_v2/.gitignore)
+Expand to cover `.env`, `venv/`, `__pycache__/`, `*.pyc`, `sessions/`, `Final_Manuals/`, `*.log`.
+
+#### [NEW] [.env.example](file:///c:/doc_automation_v2/.env.example)
+Empty key placeholders. README warning about the rotated Ollama key.
+
+#### [MODIFY] [requirements.txt](file:///c:/doc_automation_v2/requirements.txt)
+Replace 7 lines with accurate pinned set:
+```
+playwright==1.61.0
+python-docx==1.2.0
+pydantic==2.*
+PyYAML==6.*
+python-dotenv==1.*
+httpx==0.28.*
+Pillow==12.*
+loguru==0.7.*
+pytest==8.*
+```
+Remove: `pyautogui`, `rich`, `ollama` (switches to httpx in Phase 2).
+
+#### [NEW] [docbot/logging_setup.py](file:///c:/doc_automation_v2/docbot/logging_setup.py)
+Loguru: stderr INFO sink + rotating file DEBUG sink. `attach_session_log(session_dir)` called when a session dir is known.
+
+#### [MODIFY] [config.py](file:///c:/doc_automation_v2/config.py)
+Replace bare `print()` with `logger.info/debug`; replace `except Exception: pass` with `except Exception as e: logger.warning(...)`.
+
+#### [MODIFY] [main.py](file:///c:/doc_automation_v2/main.py)
+Same logger substitution; remove hardcoded `module_num = 10` and `"Case Form"` fallback — these become Phase 5 concerns passed from the launcher.
+
+#### Dead code removal:
+- **[DELETE]** `templates/` package (entire directory)
+- **[MODIFY]** `providers/browser.py`: remove `_write_and_wait` and `_parse_json_response` (dead since base.py called `llm_ui` instead)
+- **[MODIFY]** `providers/anthropic_api.py`: remove `_parse_json_response`
+- **[MODIFY]** `providers/ollama.py`: remove `_parse_json_response`
+
+#### Git tracking cleanup:
+Run `git rm -r --cached` for tracked junk; run `git rm --cached .env`.
+
+---
+
+### Phase 2 — Provider Layer Rebuild (W12, W14, W15, W20, W24, W25)
+
+---
+
+#### [MODIFY] [providers/base.py](file:///c:/doc_automation_v2/providers/base.py)
+**Complete rewrite.** New `Provider` ABC with:
+- `chat(prompt, *, max_tokens=8000, temperature=0.2, system=None) -> str`
+- `chat_vision(prompt, images, **kw) -> str` — default falls back to text-only with `logger.warning`
+- `chat_json(prompt, schema: type[BaseModel], images=None, **kw) -> BaseModel` — strips fences, `json.loads`, `schema.model_validate`; ONE retry on `ValidationError` appending the error to prompt; raises `GenerationError` on second failure
+- `load_prompt(name, version="v3", **kwargs)` now searches `prompts/v3/` first
+- **NO import of `llm_ui`, `tkinter`, or config UI**
+- All 6 `generate_*` methods on the old base are **deleted** (replaced by `generate_screen` in `processing/generator.py`)
+- `RegionForLabeling`, `FieldForDescribing` dataclasses **deleted** (replaced by pydantic models in Phase 3)
+
+#### [MODIFY] [providers/anthropic_api.py](file:///c:/doc_automation_v2/providers/anthropic_api.py)
+Implement `chat()`, `chat_vision()` (base64 PNG, downscale to 1568px), `system` param, `claude-sonnet-4-6` default, exponential backoff (3 tries) on 429/5xx.
+
+#### [MODIFY] [providers/openai_compat.py](file:///c:/doc_automation_v2/providers/openai_compat.py)
+Implement same interface with `image_url` data-URI blocks.
+
+#### [MODIFY] [providers/ollama.py](file:///c:/doc_automation_v2/providers/ollama.py)
+**Rewrite using `httpx`** (drop `ollama` package). POST to `{host}/api/chat` with `images` field (base64 list) for vision. Implement `chat()` and `chat_vision()`. `is_available()`: key present.
+
+#### [NEW] [providers/browser_batch.py](file:///c:/doc_automation_v2/providers/browser_batch.py)
+Session-batching mode: `queue(prompt_id, prompt)` + `flush()` writes ONE combined `llm_batch_prompt.txt` (delimited blocks `===== PROMPT <id> =====`), blocks for response, parses `llm_batch_response.txt`. Single-prompt `chat()` still supported. "1 paste per session" for browser mode (W25).
+
+#### [NEW] [prompts/v3/screen_documentation.txt](file:///c:/doc_automation_v2/prompts/v3/screen_documentation.txt)
+Consolidated ONE prompt. Placeholders: `{app_name}`, `{client_display_name}`, `{screen_context_json}`, `{elements_json}`, `{regions_json}`, `{events_json}`, `{voice_examples}`, `{glossary_terms}`, `{field_style}`. Returns structured JSON with `screen_name`, `screen_type`, `purpose`, `navigation_sentence`, `regions[]`, `fields[]`, `steps[]`, `notes[]`, `table_columns_doc[]`, `buttons_doc[]`. Merging by `id` not index (W11). Vision phrased conditionally.
+
+#### [NEW] [prompts/v3/module_intro.txt](file:///c:/doc_automation_v2/prompts/v3/module_intro.txt)
+Module introduction prompt (moved from old inline text).
+
+#### [NEW] [docbot/processing/generator.py](file:///c:/doc_automation_v2/docbot/processing/generator.py)
+`generate_screen(session, screen) -> ScreenContent` — builds prompt from Session model, calls `provider.chat_json(..., images=[screenshot_path])`, merges by id. Content hash caching (W17). `generate_module_intro(session)` through new provider.
+
+#### [MODIFY] [labeler.py](file:///c:/doc_automation_v2/labeler.py)
+Thin shim: `from docbot.processing.generator import generate_screen` with `DeprecationWarning`. Keeps old pipeline runnable. Deleted in Phase 7.
+
+---
+
+### Phase 3 — Session Data Model + Event Recording (W7, W8, W9, W17, W19)
+
+---
+
+#### [NEW] [docbot/models.py](file:///c:/doc_automation_v2/docbot/models.py)
+All pydantic v2 models: `BBox`, `Element`, `Event`, `Region`, `Field`, `Step`, `Figure`, `ScreenContent`, `Screen`, `SessionModel`. `SessionStore.load(dir)/save(dir)` (atomic write via tmp+rename). `migrate_legacy(dir)` converts old `screen_N_*.json` folders.
+
+#### [NEW] [docbot/recorder/capture.py](file:///c:/doc_automation_v2/docbot/recorder/capture.py)
+New capture module operating on `SessionModel`. Includes:
+- `device_scale_factor=1` launch (W7)
+- Document-coordinate bboxes (scrollX/scrollY added) (W7)
+- Fixed/sticky element tagging (W8)
+- `context.on("page", setup_page)` for multi-tab (W9)
+- `page.expose_function("docbotEvent", on_event)` for JS event bridge
+- Auto-capture on navigate/DOM mutation (debounced 1.5s)
+- `storage_state` save/restore per client
+- Capture modes: `viewport` / `full_page` / `both` from config (T3.6)
+- Gesture table: middle-click / Ctrl+middle-click / Shift+middle-click / double-middle-click
+
+#### [NEW] [docbot/recorder/injected.js](file:///c:/doc_automation_v2/docbot/recorder/injected.js)
+Event hooks: capture-phase listeners for `click`, `change`/debounced `input`, `submit`, `Enter` keypress. Selector derivation (id → name → aria-label + nth-of-type). Password/OTP/PIN/CVV redaction. Document-coordinate bboxes (rect + scrollX/scrollY). `ctrlKey` + `shiftKey` checks for gesture variants. `docbotEvent()` call.
+
+#### [MODIFY] [capture.py](file:///c:/doc_automation_v2/capture.py)
+Import shim → `from docbot.recorder.capture import run_capture_session`. With `DeprecationWarning`.
+
+#### [NEW] [docbot/processing/steps.py](file:///c:/doc_automation_v2/docbot/processing/steps.py)
+Deterministic step compiler (NO LLM): fold event list into steps. Consecutive `input` events → grouped "Enter the following details:" step. `click` → "Click on the X button." `navigate` after click → result step "The Y page will be displayed." (kind=result). Enter-key submit → same as click submit. Output `list[Step]` with `event_id` links.
+
+#### [NEW] [docbot/processing/crops.py](file:///c:/doc_automation_v2/docbot/processing/crops.py)
+For every clicked element with bbox, crop region (+6px padding) from nearest screenshot. Save `crops/<screen>_<event>.png`. Attach `crop_path` to step.
+
+#### [MODIFY] [docbot/config.py or config.py](file:///c:/doc_automation_v2/config.py)
+Add `capture:` block:
+```yaml
+capture:
+  mode: viewport
+  scroll_capture: true
+```
+
+---
+
+### Phase 4 — Region Detection & Annotation Hardening (W10, W13, W27)
+
+---
+
+#### [NEW] [docbot/processing/regions.py](file:///c:/doc_automation_v2/docbot/processing/regions.py)
+Port of `detect_regions.py` operating on `list[Element]` (pydantic). Fix W13 (explicit parentheses in `detect_page_header` operator precedence bug). Group forms by `form_id` (from JS extraction) not global union (W10). IoU-based merge pass: regions of same role with IoU > 0.6 merge; drop contained regions. Assign stable ids `r1..rN`.
+
+#### [MODIFY] [detect_regions.py](file:///c:/doc_automation_v2/detect_regions.py)
+Import shim → `from docbot.processing.regions import process_screen_regions`. Deleted in Phase 7.
+
+#### [MODIFY] [annotate.py](file:///c:/doc_automation_v2/annotate.py)
+Move core to `docbot/processing/annotate.py`. Fixes:
+- W27: candidate scoring penalizes overlap with ALREADY-PLACED callouts (placed-rect list)
+- `_wrap_text` max_chars from `style.annotations.wrap_chars` (default 14)
+- Role→color map from client style (`annotations.colors`)
+- `mode: "callouts" | "boxes_only" | "numbered_badges"` in style
+
+#### [MODIFY] [annotate.py (root shim)](file:///c:/doc_automation_v2/annotate.py)
+Thin re-export from `docbot.processing.annotate`. Deleted in Phase 7.
+
+---
+
+### Phase 5 — Export Engine: NCD-faithful Word output (W4, W5, W6, W18, W22, W23)
+
+---
+
+#### [NEW] [docbot/export/word_fields.py](file:///c:/doc_automation_v2/docbot/export/word_fields.py)
+`add_caption(doc, prefix, text, style_cfg)` — paragraph with style "Caption", SEQ field XML (`fldChar begin/instrText/separate/cached-number/end`). For module-prefixed schemes: literal module + `SEQ Figure \\r 1` reset at module start. For continuous: pure `SEQ Figure`. `TOC \\c "Figure"` compatible (W4).
+
+#### [MODIFY] [manual_builder/numbering.py](file:///c:/doc_automation_v2/manual_builder/numbering.py)
+Add `mode: continuous | module_prefixed` from manifest. `continuous` mode: single level-1 counter shared across modules; single-screen modules → level-1 section; multi-screen → module at level-1, screens at level-2 (NCD 4.4.1 pattern) (W5, W6). `module_prefixed`: NCB behavior, but module_number from `SessionModel.module_number` — delete all `= 10` hardcodes.
+
+#### [NEW] [docbot/export/renderers/field_bullets.py](file:///c:/doc_automation_v2/docbot/export/renderers/field_bullets.py)
+New renderer for `fields.style: bullets`. Lead-in paragraph + bullets formatted as `{name} – {utility}` (or whatever `bullet_format` says). `screen.py` dispatches on `style.fields.style`.
+
+#### [MODIFY] [manual_builder/renderers/screen.py](file:///c:/doc_automation_v2/manual_builder/renderers/screen.py)
+- Dispatch on `style.fields.style` (`bullets` vs `table`)
+- `layout.page_break_per_screen` flag (default false for ncd)
+- Inline crop images: steps with `crop_path` render crop inline
+- `navigation_sentence` from `ScreenContent` (no more hardcoded English template) (W22)
+- Use `word_fields.add_caption` instead of plain-text caption runs (W4)
+- Remove "Data input" / "Sample text" fallbacks — skip empty cells (W24)
+
+#### [MODIFY] [manual_builder/renderers/module.py](file:///c:/doc_automation_v2/manual_builder/renderers/module.py)
+- No more `module_num = 10` fallback — `module_number` from `SessionModel` (W5)
+- `notes_block` from voice.yaml rendered after login/first screen if set
+- Banner header mode: full-width `assets/banner.png` instead of logo table (W23)
+- Revision history column set configurable (6 columns for NCD)
+
+#### [MODIFY] [manual_builder/generic_builder.py](file:///c:/doc_automation_v2/manual_builder/generic_builder.py)
+- `dispatch_section` stops mutating `section.heading` — pass computed heading text as parameter (W18)
+- Unify outer/nested dispatch into one recursive `dispatch(section, level)` (W18)
+- `manifest` without `cover` + `revision_history` first → correct render order (W23)
+
+#### [NEW] [docbot/export/qa.py](file:///c:/doc_automation_v2/docbot/export/qa.py)
+After save: if `soffice` available, convert docx → PDF, rasterize first 3 pages, log paths.
+
+#### [NEW] [clients/ncd/](file:///c:/doc_automation_v2/clients/ncd/)
+`manifest.yaml` (continuous numbering, revision_history→toc→intro→modules), `style.yaml` (banner header, blue headings, bullets field style, boxes_only annotations, no page breaks), `voice.yaml` (NCD tone, navigation template, notes_block), `glossary.yaml`, `assets/`. Consolidates `national_data.yaml`, `national_database.yaml`, `nationdta.yaml` → delete (W30).
+
+#### [NEW] [clients/ncb/](file:///c:/doc_automation_v2/clients/ncb/)
+Migrate from `content/ncb/` + `styles/ncb.yaml`. Module-prefixed numbering, 4-column tables, NCB voice.
+
+---
+
+### Phase 6 — Client Profiles, Voice Packs, Config Unification (W16, W21, W30)
+
+---
+
+#### [NEW] [docbot/clients/profile.py](file:///c:/doc_automation_v2/docbot/clients/profile.py)
+`ClientProfile.load(key)` — loads `clients/<key>/{manifest.yaml, style.yaml, voice.yaml, glossary.yaml}` with `clients/_default/` fallback per file. All `app_name`/display-name reads go through profile. Delete `theme:` from `config.yaml`, delete `BrandThemeConfig` from `config.py` (W16).
+
+#### [MODIFY] [config.yaml](file:///c:/doc_automation_v2/config.yaml)
+Remove `theme:` block. Add `clients_dir: clients`. Add `capture:` block. Update provider `max_tokens` defaults to 8000.
+
+#### [NEW] [clients/_default/](file:///c:/doc_automation_v2/clients/_default/)
+`manifest.yaml`, `style.yaml`, `voice.yaml`, `glossary.yaml`, `assets/`. Voice.yaml schema:
+```yaml
+app_name: Enterprise Application
+tone_rules: [...]
+examples: {purpose: [...], field: [...], step: [...]}
+notes_block: ""
+navigation_template: "Navigate to {screen_name}."
+```
+
+#### [MODIFY] [providers/base.py](file:///c:/doc_automation_v2/providers/base.py)
+`load_prompt(name, version="v3")` searches `prompts/{version}/` first, falls back to `providers/prompts/`. Inject `{voice_examples}`, `{glossary_terms}` from `ClientProfile` into prompt.
+
+#### [NEW] [docbot/importer/docx_profile_import.py](file:///c:/doc_automation_v2/docbot/importer/docx_profile_import.py)
+`import_profile(reference_docx, key)`: unzip docx, parse `styles.xml`/`document.xml`/`sectPr`/`numbering.xml`/header parts, extract banner image, build manifest skeleton, extract voice examples heuristically (paragraphs near "Enter the following details:"), write four YAMLs + assets under `clients/<key>/`.
+
+#### [MODIFY] [ui/launcher.py](file:///c:/doc_automation_v2/ui/launcher.py)
+Brand dialog now edits ACTIVE CLIENT's `style.yaml`, not global `theme:` (W16). App_name reads from profile (W16). Client dropdown drives all profile/style/voice choices.
+
+#### Prompt cleanup (W21):
+- Strip all NCB few-shot examples from `prompts/v3/screen_documentation.txt` — move to `clients/ncb/voice.yaml`
+- Create `clients/ncd/voice.yaml` with NCD examples
+- Remove `prompts/v3/` of old per-step prompts (`describe_fields.txt`, `label_regions.txt`, etc.) — replaced by single consolidated prompt
+
+---
+
+### Phase 7 — Review UI: document-level, low-friction (W26, W25-residual)
+
+---
+
+#### [MODIFY] [ui/review.py](file:///c:/doc_automation_v2/ui/review.py)
+**Complete rewrite** of `review_ui.py`. New layout:
+- **Left**: screenshot canvas (zoom/pan, direct manipulation — click selects region, drag moves/resizes, drag empty = new region with role picker, Delete key soft-deletes, Ctrl+Z undo)
+- **Right notebook Tab 1 — Content**: screen_name entry, purpose text, nav sentence, steps ordered list (add/remove/reorder + per-step crop thumbnail), notes list, fields grid (in-place cell editing), FIGURES strip (thumbnails, delete, reorder, viewport↔full_page toggle)
+- **Right notebook Tab 2 — Regions**: existing tree
+- Live annotated preview: debounce 600ms after region change → re-render → refresh canvas
+- Per-block regenerate buttons: "Regenerate steps/fields/purpose" + instruction entry → `generator.py` for just that block
+- `session.json` autosaved on tab change/navigation
+- `Ctrl+Right/Left` next/prev screen, `Ctrl+S` save, `Enter` in name field accepts ghost text suggestion
+- Screen list sidebar with reviewed-checkmark
+- Browser-batch mode: regenerate queues and flushes one prompt
+
+#### Deletion:
+- `llm_ui.py` — deleted (nothing may import it after this phase)
+- `review_ui.py` — replaced by `ui/review.py` (the rewrite IS in this file path if we keep it, or new path)
+- `labeler.py`, `detect_regions.py`, `capture.py`, `annotate.py` shims at root — deleted
+- `providers/prompts/` old templates — deleted (replaced by `prompts/v3/`)
+
+---
+
+### Phase 8 — Launcher polish + Tests + Docs
+
+---
+
+#### [MODIFY] [ui/launcher.py](file:///c:/doc_automation_v2/ui/launcher.py)
+Add: Start URL entry (persisted per client), module name + number fields at "Record New Module", session list with rename/delete/per-session module number editing, client dropdown, "New Client" (copy `_default`), "Import from manual…" (T6.3), "Open output" after assembly. Session module numbers passed into `SessionModel` — kills W5 at workflow level.
+
+#### [NEW] [tests/](file:///c:/doc_automation_v2/tests/)
+- `test_regions.py`: synthetic fixture → merge/dedup count assertions
+- `test_steps.py`: event fixtures → expected steps (result-after-navigate, redaction)
+- `test_numbering.py`: NumberingTracker both modes
+- `test_chat_json.py`: FakeProvider validation-retry
+- `test_prose.py`: prose renderer markdown cases  
+- `test_captions.py`: SEQ field XML contains `w:instrText SEQ Figure`
+- `tests/fixtures/mini_session/`: 2 screens, tiny PNGs, builds under ncd and ncb → assert headings/captions via python-docx readback (no Playwright, no network)
+
+#### [NEW] [README.md](file:///c:/doc_automation_v2/README.md)
+Rewrite for v3 writer workflow. CHANGELOG mapping W-numbers to fixes.
+
+#### [NEW] [docs/ADDING_A_CLIENT.md](file:///c:/doc_automation_v2/docs/ADDING_A_CLIENT.md)
+#### [NEW] [docs/ARCHITECTURE.md](file:///c:/doc_automation_v2/docs/ARCHITECTURE.md)
+
+---
+
+## Migration Map (Old → New)
+
+| Old location | New location | Action |
+|---|---|---|
+| `capture.py` | `docbot/recorder/capture.py` | Move + shim |
+| `detect_regions.py` | `docbot/processing/regions.py` | Move + shim |
+| `annotate.py` | `docbot/processing/annotate.py` | Move + shim |
+| `labeler.py` | `docbot/processing/generator.py` | Replace + shim |
+| `llm_ui.py` | _(deleted in Ph7)_ | Delete |
+| `review_ui.py` | `ui/review.py` | Rewrite |
+| `providers/` | `providers/` | In-place rebuild |
+| `providers/prompts/` | `prompts/v3/` | Move + consolidate |
+| `content/<key>/` | `clients/<key>/manifest.yaml + prose/` | git mv |
+| `styles/<key>.yaml` | `clients/<key>/style.yaml` | git mv + merge |
+| `templates/` | _(deleted)_ | Delete |
+| `manual_builder/` | `docbot/export/` (eventually) | In-place + new files |
+
+---
+
+## Verification Plan
+
+### Automated Tests (Phase 8)
+```
+pytest tests/ -v --no-header
+```
+All tests use `FakeProvider` — no network, no Playwright.
+
+### Phase Boundary Checks
+Each phase ends by running:
+```
+python -m docbot.ui.launcher   # must open without error
+```
+
+### Manual Verification (Phases 5, 6)
+- Build a session under client `ncd` → open docx in Word:
+  - Revision history is page 1
+  - Sections numbered 1/2/3 continuously
+  - Field bullets in "Name – description" form
+  - Banner header on every page
+  - A crop image inline in a step
+  - Update Field in Word populates TOC AND Table of Figures correctly
+- Build under `ncb` → module-prefixed numbering + 4-column tables still correct
+
+### Phase 3 Acceptance (Capture)
+- Record 3-screen flow → `session.json` validates pydantic; events have document-coordinate bboxes; password redacted; result step after navigation; crop PNGs present; annotation boxes pixel-aligned on 125%-scaled Windows display; new-tab keeps recording.
+
+### Phase 2 Acceptance (Providers)
+- API mode: zero Tkinter popups
+- Browser mode: exactly 1 paste per session
+- 20-field screen: no truncation (max_tokens=8000)
+- Killed field in fake LLM response: id-merge test shows no misalignment
