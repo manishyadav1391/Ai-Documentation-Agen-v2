@@ -418,7 +418,15 @@ class ReviewSessionUI:
             regions.append({
                 "id": r.id,
                 "role": r.role,
-        def _load_canvas_image(self):
+                "bounding_box": r.bounding_box.model_dump(),
+                "elements_contained": r.elements_contained,
+                "label": r.label,
+                "deleted": r.deleted
+            })
+        final_path.write_text(json.dumps(regions, indent=2), encoding="utf-8")
+
+    def _load_canvas_image(self):
+
         img_path = self.session_dir / self.screen.screenshot
         if not img_path.exists():
             # try normal viewport or full screenshot fallbacks
