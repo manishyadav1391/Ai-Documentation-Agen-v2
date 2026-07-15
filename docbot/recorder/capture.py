@@ -219,10 +219,9 @@ class CaptureSession:
                 headless=False,
                 args=["--start-maximized"],
             )
-            # device_scale_factor=1 fixes W7 (DPI mismatch)
+            # Let browser control viewport (DPI mismatch handled downstream in annotator)
             context = browser.new_context(
                 no_viewport=True,
-                device_scale_factor=1,
             )
             # Restore saved auth state if available
             state_path = self.cfg.sessions_path / "state" / f"{self.session.client_key}.json"
@@ -230,12 +229,12 @@ class CaptureSession:
                 try:
                     context = browser.new_context(
                         no_viewport=True,
-                        device_scale_factor=1,
                         storage_state=str(state_path),
                     )
                     logger.info(f"Restored auth state from {state_path.name}")
                 except Exception as e:
                     logger.warning(f"Could not restore auth state: {e}")
+
 
             # Instrument every new page (W9 multi-tab fix)
             context.on("page", self._setup_page)

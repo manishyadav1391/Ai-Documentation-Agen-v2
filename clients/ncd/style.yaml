@@ -1,30 +1,24 @@
-# NCD Style Configuration
-# Merged with _default/style.yaml (this file takes precedence)
-
 page:
   size: A4
   margin_top_cm: 2.54
   margin_bottom_cm: 2.54
   margin_left_cm: 2.54
   margin_right_cm: 2.54
-
 fonts:
   body_family: Segoe UI
   body_size_pt: 10.5
   heading_family: Segoe UI
   code_family: Consolas
-
 colors:
-  primary: "1B365D"
-  secondary: "D97706"
-  tertiary: "C00000"
-  accent: "3B82F6"
-  table_header_bg: "1B365D"
-  table_header_fg: "FFFFFF"
-  table_zebra: "F8FAFC"
-  body_text: "333333"
-  muted: "828282"
-
+  primary: 1B365D
+  secondary: D97706
+  tertiary: C00000
+  accent: 3B82F6
+  table_header_bg: 1B365D
+  table_header_fg: FFFFFF
+  table_zebra: F8FAFC
+  body_text: '333333'
+  muted: '828282'
 headings:
   h1_size_pt: 20
   h1_bold: true
@@ -38,48 +32,41 @@ headings:
   h4_size_pt: 11
   h4_bold: true
   h4_color: secondary
-
 numbering:
-  section_format: "{n}"
-  subsection_format: "{parent}.{n}"
-  figure_prefix: "Figure"
-  figure_format: "{fig}"          # continuous: "1", "2", "3"
-  table_prefix: "Table"
-  table_format: "{tbl}"
-
+  section_format: '{n}'
+  subsection_format: '{parent}.{n}'
+  figure_prefix: Figure
+  figure_format: '{fig}'
+  table_prefix: Table
+  table_format: '{tbl}'
 figures:
   max_width_cm: 16
   caption_position: below
   caption_style: italic
   caption_size_pt: 10
-  border_enabled: false           # NCD does not use figure borders
-
+  border_enabled: false
 tables:
   header_bold: true
   header_bg: table_header_bg
   header_fg: table_header_fg
   zebra_striping: true
   zebra_color: table_zebra
-  border_color: "CCCCCC"
+  border_color: CCCCCC
   border_width_pt: 0.5
   cell_padding_pt: 4
   caption_position: below
   caption_style: italic
   caption_size_pt: 10
-
 fields:
-  style: bullets                  # W22: NCD uses bullet list, not 4-column table
-  bullet_format: "{name} — {utility}"
-
+  style: bullets
+  bullet_format: "{name} \u2014 {utility}"
 bullets:
-  level_0_marker: "•"
-  level_1_marker: "◦"
-  level_2_marker: "▪"
+  level_0_marker: "\u2022"
+  level_1_marker: "\u25E6"
+  level_2_marker: "\u25AA"
   indent_cm: 0.5
-
 layout:
-  page_break_per_screen: false    # NCD flows screens continuously
-
+  page_break_per_screen: false
 cover:
   layout: left_accent_bar
   accent_bar_color: primary
@@ -88,31 +75,27 @@ cover:
   title_color: primary
   subtitle_size_pt: 18
   subtitle_color: muted
-
 header:
-  mode: banner                    # W23: full-width banner instead of logo table
-  banner_path: assets/banner.png  # relative to this clients/ncd/ dir
+  mode: banner
+  banner_path: assets/banner.png
   height_cm: 1.5
-
 revision_history:
   header_bg: table_header_bg
   header_fg: table_header_fg
-  border_color: "CCCCCC"
-  columns:                        # NCD uses 6 columns
-    - Version
-    - Date
-    - Description of Change
-    - Author
-    - Reviewed By
-    - Approved By
-
+  border_color: CCCCCC
+  columns:
+  - Version
+  - Date
+  - Description of Change
+  - Author
+  - Reviewed By
+  - Approved By
 toc:
-  title: "Table of Contents"
+  title: Table of Contents
   max_depth: 3
   dot_leaders: true
-
 annotations:
-  mode: boxes_only               # NCD: clean boxes, no callout bubbles
+  mode: boxes_only
   wrap_chars: 14
   colors:
     filter_form: red
@@ -122,9 +105,10 @@ annotations:
     view_only: green
     page_header: blue
     navigation_bar: blue
-
 footer:
   show_page_numbers: true
-  page_number_format: "Page {current} of {total}"
+  page_number_format: Page {current} of {total}
   page_number_color: muted
-  center_text: ""
+  center_text: ''
+logo:
+  path: C:/Users/stadmin/Downloads/logo.png

@@ -320,6 +320,17 @@ def render_annotations(
         shutil.copy(img_path, output_path)
         return
 
+    # Resolve DPI scale factor from session model
+    dpr = 1.0
+    try:
+        from docbot.models import SessionStore
+        session = SessionStore.load(session_dir)
+        screen = next((s for s in session.screens if s.index == screen_index), None)
+        if screen:
+            dpr = screen.device_pixel_ratio
+    except Exception as e:
+        logger.debug(f"[Annotate] Could not load session for scaling check: {e}")
+
     # Resolve style from client profile
     profile = client_profile or {}
     annot_style = profile.get("style", {}).get("annotations", {})
@@ -327,9 +338,9 @@ def render_annotations(
     wrap_chars = int(annot_style.get("wrap_chars", 14))
     color_map = annot_style.get("colors", _DEFAULT_ROLE_COLORS)
 
-    label_font_size = cfg.render.label_font_size
-    stroke_width = cfg.render.region_stroke_width
-    border_width = cfg.render.callout_border_width
+    label_font_size = int(cfg.render.label_font_size * dpr)
+    stroke_width = int(cfg.render.region_stroke_width * dpr)
+    border_width = int(cfg.render.callout_border_width * dpr)
 
     regions: list[_Region] = []
     for r in regions_data:
@@ -337,10 +348,10 @@ def render_annotations(
         if not bbox or r.get("deleted"):
             continue
         regions.append(_Region(
-            x=int(bbox.get("x", 0)),
-            y=int(bbox.get("y", 0)),
-            w=int(bbox.get("width", 0)),
-            h=int(bbox.get("height", 0)),
+            x=int(bbox.get("x", 0) * dpr),
+            y=int(bbox.get("y", 0) * dpr),
+            w=int(bbox.get("width", 0) * dpr),
+            h=int(bbox.get("height", 0) * dpr),
             label=r.get("label") or r.get("elements_contained", [""])[0] or "Region",
             role=r.get("role", "filter_form"),
         ))
@@ -353,6 +364,7 @@ def render_annotations(
     small_font = _get_font(max(10, label_font_size - 4))
 
     placed: list[Tuple[int, int, int, int]] = []  # W27: track placed callout rects
+
 
     legend_entries: list[Tuple[int, str, dict]] = []  # (number, label, palette) for numbered_badges
 

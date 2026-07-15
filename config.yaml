@@ -1,11 +1,10 @@
 provider: browser
 default_template: corporate
-current_client: ncb
+current_client: ncd
 content_dir: content
 clients_dir: clients
 styles_dir: styles
 sessions_dir: sessions
-
 providers:
   browser:
     editor_command: notepad
@@ -23,15 +22,10 @@ providers:
     model: gpt-oss:120b
     api_key_env: OLLAMA_API_KEY
     max_tokens: 8000
-
 render:
   label_font_size: 20
   region_stroke_width: 3
   callout_border_width: 2
-
 capture:
   mode: viewport
   scroll_capture: true
-
-# Note: The "theme" block has been removed in v3.
-# Branding is now controlled per-client via clients/<key>/style.yaml
