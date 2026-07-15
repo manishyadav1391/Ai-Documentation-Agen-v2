@@ -81,46 +81,124 @@ def run_pipeline(client_key: str = None, start_url: str = None, module_name: str
     # Attach per-session log file
     attach_session_log(latest_session)
 
-    # Count captured screens
-    screens = list(latest_session.glob("screen_*_elements.json"))
-    num_screens = len(screens)
+    # Count captured screens using the v3 SessionStore (W17)
+    from docbot.models import SessionStore
+    session = SessionStore.load(latest_session)
+    num_screens = len(session.screens)
 
     if num_screens == 0:
         logger.warning("No screens were captured. Exiting.")
         return
 
-    # 2. Processing & Review Phase (Multi-Screen Loop)
     logger.info(f"--- PHASE 2: Processing {num_screens} Screens ---")
 
-    screen_index = 1
-    while 1 <= screen_index <= num_screens:
-        logger.info(f"--- Screen {screen_index} of {num_screens} ---")
+    # 1. Detect regions & compile steps deterministically for all screens
+    from docbot.processing.regions import detect_regions
+    from docbot.processing.steps import compile_steps
 
-        # Detect Semantic Regions
-        process_screen_regions(latest_session, screen_index)
+    for screen in session.screens:
+        # Detect regions if not already done
+        if not screen.regions:
+            logger.info(f"Detecting regions for Screen {screen.index}…")
+            screen.regions = detect_regions(screen.elements)
+        
+        # Compile steps from events if not already done
+        if not screen.content.steps and screen.events:
+            logger.info(f"Compiling event steps for Screen {screen.index}…")
+            screen.content.steps = compile_steps(screen.events)
 
-        # Label Regions via LLM Orchestrator
-        bot_labeler.label_screen_regions(latest_session, screen_index)
+    # Save intermediate state
+    SessionStore.save(session, latest_session)
 
-        # Open the Visual Review UI
-        logger.info(f"Opening Review UI for Screen {screen_index}...")
-        nav_action = open_review_ui(latest_session, screen_index, total_screens=num_screens)
+    # 2. AI Pre-generation Pass (Vision-first single-call documentation)
+    from docbot.processing.generator import Generator
+    from docbot.clients.profile import ClientProfile
 
-        # Render the final annotated PNG
-        render_annotations(latest_session, screen_index)
+    profile = ClientProfile.load(config.current_client)
+    generator = Generator(provider)
 
-        # Handle navigation routing
-        if nav_action == "prev" and screen_index > 1:
-            screen_index -= 1
-        elif nav_action == "quit":
-            logger.info("Session processing manually aborted.")
-            return
-        else:
-            # Generate prose and field descriptions only when moving forward
-            bot_labeler.generate_screen_content(latest_session, screen_index)
-            screen_index += 1
+    logger.info("--- Pre-generating Documentation (AI single-call) ---")
+    for screen in session.screens:
+        # Avoid overwriting already generated/edited screens unless forced
+        if not screen.content.screen_name or not screen.content.purpose:
+            try:
+                logger.info(f"Pre-generating Screen {screen.index} documentation…")
+                generator.generate_screen(session, screen, client_profile=profile.data)
+            except Exception as e:
+                logger.warning(f"Failed to pre-generate Screen {screen.index}: {e}")
 
-    # Generate Module Introduction before Assembly
+    # Save generated state
+    SessionStore.save(session, latest_session)
+
+    # Write out legacy JSON files to ensure compatibility with manual_builder/
+    for screen in session.screens:
+        # Write screen_N_meta.json
+        meta_path = latest_session / f"screen_{screen.index}_meta.json"
+        meta_data = {
+            "screen_index": screen.index,
+            "url": screen.url,
+            "title": screen.title,
+            "h1_text": screen.h1_text,
+            "breadcrumb": screen.breadcrumb,
+            "nav_trail": screen.nav_trail,
+            "state_of": screen.state_of,
+            "state_label": screen.state_label,
+            "screen_name": screen.content.screen_name or screen.title or f"Screen {screen.index}"
+        }
+        meta_path.write_text(json.dumps(meta_data, indent=2), encoding="utf-8")
+
+        # Write screen_N_elements.json
+        el_path = latest_session / f"screen_{screen.index}_elements.json"
+        el_data = [el.model_dump() for el in screen.elements]
+        el_path.write_text(json.dumps(el_data, indent=2), encoding="utf-8")
+
+        # Write screen_N_regions.json
+        r_path = latest_session / f"screen_{screen.index}_regions.json"
+        r_data = [r.model_dump() for r in screen.regions if not r.deleted]
+        r_path.write_text(json.dumps(r_data, indent=2), encoding="utf-8")
+
+        # Write screen_N_content.json
+        content_path = latest_session / f"screen_{screen.index}_content.json"
+        legacy_content = {
+            "screen_name": screen.content.screen_name,
+            "purpose": screen.content.purpose,
+            "navigation_instructions": screen.content.navigation_sentence,
+            "field_details": [
+                {
+                    "field_name": f.field_name,
+                    "utility": f.utility,
+                    "information": f.information,
+                    "sample": f.sample
+                }
+                for f in screen.fields
+            ],
+            "screen_documentation": {
+                "overview": screen.content.purpose,
+                "buttons": screen.content.buttons_doc,
+                "table_columns": screen.content.table_columns_doc,
+                "notes": screen.content.notes
+            },
+            "steps": [
+                {
+                    "n": s.n,
+                    "text": s.text,
+                    "kind": s.kind,
+                    "crop_path": s.crop_path
+                }
+                for s in screen.content.steps
+            ],
+            "figures": [
+                {"index": j + 1, "path": fig.path, "caption_note": fig.caption_note}
+                for j, fig in enumerate(screen.figures)
+            ]
+        }
+        content_path.write_text(json.dumps(legacy_content, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    # 3. Open the visual review UI
+    logger.info("Opening Review UI...")
+    open_review_ui(latest_session, screen_index=1)
+
+    # 4. Generate Module Introduction before Assembly
     from manual_builder import load_manifest
     _module_name = module_name
     _module_number = module_number
@@ -134,12 +212,13 @@ def run_pipeline(client_key: str = None, start_url: str = None, module_name: str
 
     bot_labeler.generate_module_intro(latest_session, _module_name, _module_number or 1)
 
-    # 3. Assembly Phase
+    # 5. Assembly Phase
     logger.info("--- PHASE 3: Module Assembly ---")
     assemble_module(latest_session)
     logger.info("=" * 55)
     logger.info("       Module processing completed successfully!       ")
     logger.info("=" * 55)
+
 
 
 if __name__ == "__main__":

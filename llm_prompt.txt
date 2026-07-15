@@ -1,0 +1,2489 @@
+You are a professional technical documentation writer specialising in enterprise software user manuals.
+
+CLIENT: NCD
+APPLICATION: NCD System
+
+VOICE RULES:
+Tone rules:
+  - Use formal, professional, third-person imperative.
+  - Sentences should be concise and direct.
+  - Do not use contractions.
+  - Field names must match labels shown on screen exactly.
+  - Use active voice throughout.
+  - Navigation instructions should name the exact menu path.
+
+Example purpose sentences:
+  "The Login screen enables users to securely access the NCD System using their assigned credentials."
+  "The Dashboard screen displays a summary of registered patients and active cases across all facilities."
+
+Example step sentences:
+  "Click on the Login button to proceed."
+  "Enter the following details:"
+  "  Username — Enter the assigned user login name."
+  "  Password — Enter the account password."
+  "The Home page will be displayed."
+  "Select NCD Records from the main navigation menu."
+
+Example field bullets:
+  "Facility — Select the health facility from the dropdown list."
+  "Date of Visit — Enter the date of the patient's visit in DD/MM/YYYY format."
+
+Navigation template: "Select {screen_name} option from {parent_menu} as shown in the image below;"
+
+GLOSSARY (use these terms verbatim — do NOT paraphrase):
+(No glossary terms defined.)
+
+---
+
+SCREEN CONTEXT:
+{
+  "url": "https://opensource-demo.orangehrmlive.com/web/index.php/pim/viewEmployeeList",
+  "title": "OrangeHRM",
+  "h1_text": "",
+  "breadcrumb": "",
+  "nav_trail": [],
+  "screen_index": 4,
+  "module_name": "login module"
+}
+
+INTERACTIVE ELEMENTS (DOM):
+[
+  {
+    "id": "el_0",
+    "tag": "input",
+    "type": "text",
+    "role": null,
+    "accessible_name": "Search",
+    "required": false,
+    "placeholder": "Search",
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 46.0,
+      "y": 119.0,
+      "width": 171.0,
+      "height": 20.390625
+    }
+  },
+  {
+    "id": "el_1",
+    "tag": "button",
+    "type": "button",
+    "role": "none",
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 243.0,
+      "y": 110.0,
+      "width": 25.0,
+      "height": 25.0
+    }
+  },
+  {
+    "id": "el_2",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": "Upgrade",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1590.015625,
+      "y": 10.21875,
+      "width": 115.890625,
+      "height": 47.78125
+    }
+  },
+  {
+    "id": "el_3",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": "Help",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1826.0,
+      "y": 74.0,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_4",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1808.0,
+      "y": 181.0,
+      "width": 24.0,
+      "height": 24.0
+    }
+  },
+  {
+    "id": "el_5",
+    "tag": "input",
+    "type": "text",
+    "role": null,
+    "accessible_name": "Type for hints...",
+    "required": false,
+    "placeholder": "Type for hints...",
+    "ancestor_section": "form",
+    "bounding_box": {
+      "x": 332.0,
+      "y": 247.09375,
+      "width": 356.0,
+      "height": 39.59375
+    }
+  },
+  {
+    "id": "el_6",
+    "tag": "input",
+    "type": "text",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "form",
+    "bounding_box": {
+      "x": 713.0,
+      "y": 244.390625,
+      "width": 358.0,
+      "height": 45.0
+    }
+  },
+  {
+    "id": "el_7",
+    "tag": "input",
+    "type": "text",
+    "role": null,
+    "accessible_name": "Type for hints...",
+    "required": false,
+    "placeholder": "Type for hints...",
+    "ancestor_section": "form",
+    "bounding_box": {
+      "x": 332.0,
+      "y": 330.484375,
+      "width": 356.0,
+      "height": 39.59375
+    }
+  },
+  {
+    "id": "el_8",
+    "tag": "button",
+    "type": "reset",
+    "role": null,
+    "accessible_name": "Reset",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "form",
+    "bounding_box": {
+      "x": 1617.421875,
+      "y": 405.78125,
+      "width": 102.09375,
+      "height": 32.0
+    }
+  },
+  {
+    "id": "el_9",
+    "tag": "button",
+    "type": "submit",
+    "role": null,
+    "accessible_name": "Search",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "form",
+    "bounding_box": {
+      "x": 1729.515625,
+      "y": 405.78125,
+      "width": 107.484375,
+      "height": 32.0
+    }
+  },
+  {
+    "id": "el_10",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": "Add",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 329.0,
+      "y": 505.78125,
+      "width": 108.53125,
+      "height": 31.25
+    }
+  },
+  {
+    "id": "el_13",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 676.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_14",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 676.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_16",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 727.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_17",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 727.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_19",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 778.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_20",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 778.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_22",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 829.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_23",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 829.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_25",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 880.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_26",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 880.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_28",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 931.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_29",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 931.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_31",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 982.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_32",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 982.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_34",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1033.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_35",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1033.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_37",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1084.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_38",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1084.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_40",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1135.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_41",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1135.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_43",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1186.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_44",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1186.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_46",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1237.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_47",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1237.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_49",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1288.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_50",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1288.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_52",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1339.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_53",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1339.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_55",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1390.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_56",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1390.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_58",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1441.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_59",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1441.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_61",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1492.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_62",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1492.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_64",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1543.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_65",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1543.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_67",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1594.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_68",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1594.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_70",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1645.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_71",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1645.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_73",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1696.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_74",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1696.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_76",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1747.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_77",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1747.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_79",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1798.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_80",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1798.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_82",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1849.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_83",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1849.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_85",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1900.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_86",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1900.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_88",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 1951.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_89",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 1951.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_91",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2002.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_92",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2002.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_94",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2053.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_95",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2053.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_97",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2104.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_98",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2104.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_100",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2155.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_101",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2155.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_103",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2206.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_104",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2206.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_106",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2257.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_107",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2257.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_109",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2308.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_110",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2308.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_112",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2359.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_113",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2359.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_115",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2410.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_116",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2410.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_118",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2461.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_119",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2461.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_121",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2512.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_122",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2512.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_124",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2563.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_125",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2563.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_127",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2614.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_128",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2614.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_130",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2665.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_131",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2665.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_133",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2716.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_134",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2716.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_136",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2767.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_137",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2767.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_139",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2818.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_140",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2818.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_142",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2869.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_143",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2869.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_145",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2920.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_146",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2920.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_148",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 2971.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_149",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 2971.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_151",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 3022.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_152",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 3022.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_154",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 3073.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_155",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 3073.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_157",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 3124.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_158",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 3124.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_160",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1668.25,
+      "y": 3175.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_161",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1709.25,
+      "y": 3175.03125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_162",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": "1",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1568.234375,
+      "y": 3253.828125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_163",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": "2",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1613.828125,
+      "y": 3253.828125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_164",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": "3",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1659.421875,
+      "y": 3253.828125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_165",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": "4",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1705.015625,
+      "y": 3253.828125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_166",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": "5",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1750.609375,
+      "y": 3253.828125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "el_167",
+    "tag": "button",
+    "type": "button",
+    "role": null,
+    "accessible_name": null,
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": null,
+    "bounding_box": {
+      "x": 1796.203125,
+      "y": 3253.828125,
+      "width": 36.0,
+      "height": 36.0
+    }
+  },
+  {
+    "id": "nav_1",
+    "tag": "a",
+    "type": "nav_link",
+    "role": "link",
+    "accessible_name": "Admin",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "navigation",
+    "bounding_box": {
+      "x": 0.0,
+      "y": 158.390625,
+      "width": 246.0,
+      "height": 38.0
+    }
+  },
+  {
+    "id": "nav_2",
+    "tag": "a",
+    "type": "nav_link",
+    "role": "link",
+    "accessible_name": "PIM",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "navigation",
+    "bounding_box": {
+      "x": 0.0,
+      "y": 196.390625,
+      "width": 246.0,
+      "height": 38.0
+    }
+  },
+  {
+    "id": "nav_3",
+    "tag": "a",
+    "type": "nav_link",
+    "role": "link",
+    "accessible_name": "Leave",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "navigation",
+    "bounding_box": {
+      "x": 0.0,
+      "y": 234.390625,
+      "width": 246.0,
+      "height": 38.0
+    }
+  },
+  {
+    "id": "nav_4",
+    "tag": "a",
+    "type": "nav_link",
+    "role": "link",
+    "accessible_name": "Time",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "navigation",
+    "bounding_box": {
+      "x": 0.0,
+      "y": 272.390625,
+      "width": 246.0,
+      "height": 38.0
+    }
+  },
+  {
+    "id": "nav_5",
+    "tag": "a",
+    "type": "nav_link",
+    "role": "link",
+    "accessible_name": "Recruitment",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "navigation",
+    "bounding_box": {
+      "x": 0.0,
+      "y": 310.390625,
+      "width": 246.0,
+      "height": 38.0
+    }
+  },
+  {
+    "id": "nav_6",
+    "tag": "a",
+    "type": "nav_link",
+    "role": "link",
+    "accessible_name": "My Info",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "navigation",
+    "bounding_box": {
+      "x": 0.0,
+      "y": 348.390625,
+      "width": 246.0,
+      "height": 38.0
+    }
+  },
+  {
+    "id": "nav_7",
+    "tag": "a",
+    "type": "nav_link",
+    "role": "link",
+    "accessible_name": "Performance",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "navigation",
+    "bounding_box": {
+      "x": 0.0,
+      "y": 386.390625,
+      "width": 246.0,
+      "height": 38.0
+    }
+  },
+  {
+    "id": "nav_8",
+    "tag": "a",
+    "type": "nav_link",
+    "role": "link",
+    "accessible_name": "Dashboard",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "navigation",
+    "bounding_box": {
+      "x": 0.0,
+      "y": 424.390625,
+      "width": 246.0,
+      "height": 38.0
+    }
+  },
+  {
+    "id": "nav_9",
+    "tag": "a",
+    "type": "nav_link",
+    "role": "link",
+    "accessible_name": "Directory",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "navigation",
+    "bounding_box": {
+      "x": 0.0,
+      "y": 462.390625,
+      "width": 246.0,
+      "height": 38.0
+    }
+  },
+  {
+    "id": "nav_10",
+    "tag": "a",
+    "type": "nav_link",
+    "role": "link",
+    "accessible_name": "Maintenance",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "navigation",
+    "bounding_box": {
+      "x": 0.0,
+      "y": 500.390625,
+      "width": 246.0,
+      "height": 38.0
+    }
+  },
+  {
+    "id": "nav_11",
+    "tag": "a",
+    "type": "nav_link",
+    "role": "link",
+    "accessible_name": "Claim",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "navigation",
+    "bounding_box": {
+      "x": 0.0,
+      "y": 538.390625,
+      "width": 246.0,
+      "height": 38.0
+    }
+  },
+  {
+    "id": "nav_12",
+    "tag": "a",
+    "type": "nav_link",
+    "role": "link",
+    "accessible_name": "Buzz",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "navigation",
+    "bounding_box": {
+      "x": 0.0,
+      "y": 576.390625,
+      "width": 246.0,
+      "height": 38.0
+    }
+  },
+  {
+    "id": "nav_13",
+    "tag": "a",
+    "type": "nav_link",
+    "role": "link",
+    "accessible_name": "Upgrade",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "navigation",
+    "bounding_box": {
+      "x": 1590.015625,
+      "y": 10.21875,
+      "width": 115.890625,
+      "height": 47.78125
+    }
+  },
+  {
+    "id": "nav_14",
+    "tag": "a",
+    "type": "nav_link",
+    "role": "link",
+    "accessible_name": "Employee List",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "navigation",
+    "bounding_box": {
+      "x": 444.421875,
+      "y": 83.5,
+      "width": 75.5,
+      "height": 16.0
+    }
+  },
+  {
+    "id": "nav_15",
+    "tag": "a",
+    "type": "nav_link",
+    "role": "link",
+    "accessible_name": "Add Employee",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "navigation",
+    "bounding_box": {
+      "x": 558.921875,
+      "y": 83.5,
+      "width": 79.0625,
+      "height": 16.0
+    }
+  },
+  {
+    "id": "nav_16",
+    "tag": "a",
+    "type": "nav_link",
+    "role": "link",
+    "accessible_name": "Reports",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "navigation",
+    "bounding_box": {
+      "x": 676.984375,
+      "y": 83.5,
+      "width": 43.40625,
+      "height": 16.0
+    }
+  },
+  {
+    "id": "lbl_0",
+    "tag": "label",
+    "type": "label",
+    "role": "heading",
+    "accessible_name": "Employee Name",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "form",
+    "bounding_box": {
+      "x": 331.0,
+      "y": 222.0,
+      "width": 88.09375,
+      "height": 16.0
+    }
+  },
+  {
+    "id": "lbl_1",
+    "tag": "label",
+    "type": "label",
+    "role": "heading",
+    "accessible_name": "Employee Id",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "form",
+    "bounding_box": {
+      "x": 713.0,
+      "y": 222.0,
+      "width": 66.375,
+      "height": 16.0
+    }
+  },
+  {
+    "id": "lbl_2",
+    "tag": "label",
+    "type": "label",
+    "role": "heading",
+    "accessible_name": "Employment Status",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "form",
+    "bounding_box": {
+      "x": 1095.0,
+      "y": 222.0,
+      "width": 106.265625,
+      "height": 16.0
+    }
+  },
+  {
+    "id": "lbl_3",
+    "tag": "label",
+    "type": "label",
+    "role": "heading",
+    "accessible_name": "Include",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "form",
+    "bounding_box": {
+      "x": 1477.0,
+      "y": 222.0,
+      "width": 39.09375,
+      "height": 16.0
+    }
+  },
+  {
+    "id": "lbl_4",
+    "tag": "label",
+    "type": "label",
+    "role": "heading",
+    "accessible_name": "Supervisor Name",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "form",
+    "bounding_box": {
+      "x": 331.0,
+      "y": 305.390625,
+      "width": 93.828125,
+      "height": 16.0
+    }
+  },
+  {
+    "id": "lbl_5",
+    "tag": "label",
+    "type": "label",
+    "role": "heading",
+    "accessible_name": "Job Title",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "form",
+    "bounding_box": {
+      "x": 713.0,
+      "y": 305.390625,
+      "width": 44.78125,
+      "height": 16.0
+    }
+  },
+  {
+    "id": "lbl_6",
+    "tag": "label",
+    "type": "label",
+    "role": "heading",
+    "accessible_name": "Sub Unit",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "form",
+    "bounding_box": {
+      "x": 1095.0,
+      "y": 305.390625,
+      "width": 47.40625,
+      "height": 16.0
+    }
+  },
+  {
+    "id": "th_1",
+    "tag": "th",
+    "type": "column_header",
+    "role": "columnheader",
+    "accessible_name": "Id",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "table",
+    "bounding_box": {
+      "x": 363.0,
+      "y": 644.03125,
+      "width": 185.75,
+      "height": 26.0
+    }
+  },
+  {
+    "id": "th_2",
+    "tag": "th",
+    "type": "column_header",
+    "role": "columnheader",
+    "accessible_name": "First (& Middle) Name",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "table",
+    "bounding_box": {
+      "x": 548.75,
+      "y": 644.03125,
+      "width": 185.75,
+      "height": 26.0
+    }
+  },
+  {
+    "id": "th_3",
+    "tag": "th",
+    "type": "column_header",
+    "role": "columnheader",
+    "accessible_name": "Last Name",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "table",
+    "bounding_box": {
+      "x": 734.5,
+      "y": 644.03125,
+      "width": 185.75,
+      "height": 26.0
+    }
+  },
+  {
+    "id": "th_4",
+    "tag": "th",
+    "type": "column_header",
+    "role": "columnheader",
+    "accessible_name": "Job Title",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "table",
+    "bounding_box": {
+      "x": 920.25,
+      "y": 644.03125,
+      "width": 185.75,
+      "height": 26.0
+    }
+  },
+  {
+    "id": "th_5",
+    "tag": "th",
+    "type": "column_header",
+    "role": "columnheader",
+    "accessible_name": "Employment Status",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "table",
+    "bounding_box": {
+      "x": 1106.0,
+      "y": 644.03125,
+      "width": 185.75,
+      "height": 26.0
+    }
+  },
+  {
+    "id": "th_6",
+    "tag": "th",
+    "type": "column_header",
+    "role": "columnheader",
+    "accessible_name": "Sub Unit",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "table",
+    "bounding_box": {
+      "x": 1291.75,
+      "y": 644.03125,
+      "width": 185.75,
+      "height": 26.0
+    }
+  },
+  {
+    "id": "th_7",
+    "tag": "th",
+    "type": "column_header",
+    "role": "columnheader",
+    "accessible_name": "Supervisor",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "table",
+    "bounding_box": {
+      "x": 1477.5,
+      "y": 644.03125,
+      "width": 185.75,
+      "height": 26.0
+    }
+  },
+  {
+    "id": "th_8",
+    "tag": "th",
+    "type": "column_header",
+    "role": "columnheader",
+    "accessible_name": "Actions",
+    "required": false,
+    "placeholder": null,
+    "ancestor_section": "table",
+    "bounding_box": {
+      "x": 1663.25,
+      "y": 644.03125,
+      "width": 185.75,
+      "height": 26.0
+    }
+  }
+]
+
+DETECTED REGIONS:
+[]
+
+RECORDED USER ACTIONS (events):
+[
+  {
+    "id": "4dda6add",
+    "kind": "click",
+    "target_name": "Leave",
+    "target_role": "span",
+    "value_summary": null,
+    "url_before": "https://opensource-demo.orangehrmlive.com/web/index.php/pim/viewEmployeeList",
+    "url_after": null
+  }
+]
+
+FIELD PRESENTATION STYLE: bullets
+
+---
+
+If a screenshot is provided, use it as your primary reference for visual context.
+If no screenshot is provided, rely entirely on the DOM elements and events above.
+
+---
+
+YOUR TASK:
+Document this screen for the client's user manual. Return EXACTLY the JSON object below.
+No markdown. No explanation. No wrapping text. Pure JSON only.
+
+STRICT RULES:
+1. Every region in "regions" MUST echo its "id" from DETECTED REGIONS above (id-based merge, NOT index-based).
+2. Every field in "fields" MUST echo its "id" from INTERACTIVE ELEMENTS above.
+3. "steps" MUST be grounded in the recorded events when events are present.
+   Polish the step wording; do NOT invent steps that have no corresponding event.
+   If no events are recorded, write steps only for controls clearly visible in the screenshot/elements and mark kind="action".
+   After a navigation event (url_before ≠ url_after), add a result step: "The [screen name] page will be displayed." with kind="result".
+4. Use glossary terms VERBATIM. Do not paraphrase them.
+5. Imitate the voice examples exactly — tone, sentence structure, formality.
+6. "navigation_sentence" should use the client voice template if provided; the LLM may refine it.
+7. If a value is unknown or not applicable, output "" (empty string). NEVER invent sample values or placeholder text like "Sample text" or "Data input".
+8. "sample" fields: only populate if you can infer a realistic example from field name/context. Otherwise "".
+9. "purpose": one sentence maximum, in client voice.
+10. Output NO markdown — pure JSON object only.
+
+OUTPUT FORMAT (return this exact structure, all fields required):
+{
+  "screen_name": "<human-readable name of this screen>",
+  "screen_type": "<one of: login | dashboard | form | report | search | detail | other>",
+  "purpose": "<one sentence describing what this screen allows the user to do, in client voice>",
+  "navigation_sentence": "<sentence describing how to navigate to this screen>",
+  "regions": [
+    {"id": "<echoed from DETECTED REGIONS>", "label": "<human-readable label>"}
+  ],
+  "fields": [
+    {
+      "id": "<echoed from INTERACTIVE ELEMENTS>",
+      "field_name": "<display name of the field>",
+      "utility": "<one-line purpose of the field>",
+      "information": "<what type of data to enter / how to use it>",
+      "sample": "<realistic example value, or empty string>"
+    }
+  ],
+  "steps": [
+    {"n": 1, "text": "<step text in imperative voice>", "kind": "<action | result>", "event_id": "<event id or null>"}
+  ],
+  "notes": ["<any important notes or warnings for the user>"],
+  "table_columns_doc": ["<description of each table column if a data table is present>"],
+  "buttons_doc": ["<description of each action button>"]
+}
