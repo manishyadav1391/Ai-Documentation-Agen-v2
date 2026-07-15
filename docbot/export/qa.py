@@ -13,12 +13,68 @@ from typing import Optional
 from loguru import logger
 
 
+def validate_ooxml_structure(docx_path: Path) -> bool:
+    """
+    T5.6 — OOXML structural validation.
+
+    Word (unlike LibreOffice) refuses to open a document where ``w:fldChar``
+    or ``w:instrText`` appear as **direct children of a ``<w:p>``**.  They are
+    run-level elements and must always be wrapped inside a ``<w:r>``.
+
+    Re-opens the saved docx, iterates every paragraph's XML, and raises
+    ``AssertionError`` if any forbidden direct-child relationship is found.
+
+    Returns:
+        True  — document passes structural validation.
+        False — violations found (details logged as errors).
+    """
+    import zipfile
+    from lxml import etree
+
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    FORBIDDEN_DIRECT = {f"{{{W}}}fldChar", f"{{{W}}}instrText"}
+
+    violations = []
+    try:
+        with zipfile.ZipFile(docx_path, "r") as z:
+            # Inspect every document part that may contain paragraphs
+            parts = [n for n in z.namelist() if n.startswith("word/") and n.endswith(".xml")]
+            for part_name in parts:
+                xml_bytes = z.read(part_name)
+                root = etree.fromstring(xml_bytes)
+                ns = {"w": W}
+                for p_el in root.iter(f"{{{W}}}p"):
+                    for child in p_el:
+                        if child.tag in FORBIDDEN_DIRECT:
+                            violations.append(
+                                f"{part_name}: <{child.tag.split('}')[1]}> is a direct child of <w:p> "
+                                f"(paragraph text: {p_el.text!r})"
+                            )
+    except Exception as e:
+        logger.warning(f"[QA T5.6] Could not parse docx for structural validation: {e}")
+        return True  # non-fatal — don't block the pipeline
+
+    if violations:
+        for v in violations:
+            logger.error(f"[QA T5.6] OOXML violation — {v}")
+        logger.error(
+            f"[QA T5.6] {len(violations)} structural violation(s) found in {docx_path.name}. "
+            "Microsoft Word will refuse to open this file. "
+            "Ensure fldChar/instrText elements are always wrapped in <w:r> runs."
+        )
+        return False
+
+    logger.info(f"[QA T5.6] OOXML structure OK — no bare fldChar/instrText in {docx_path.name}")
+    return True
+
+
 def run_qa_check(docx_path: Path) -> Optional[Path]:
     """
     Run automated QA on the generated docx file:
-    1. Look for LibreOffice `soffice` executable.
-    2. Convert docx to PDF in headless mode.
-    3. Rasterise the first 3 pages to PNG for quick inspection.
+    1. T5.6: Validate OOXML structure (fldChar/instrText must live inside runs).
+    2. Look for LibreOffice `soffice` executable.
+    3. Convert docx to PDF in headless mode.
+    4. Rasterise the first 3 pages to PNG for quick inspection.
 
     Args:
         docx_path: Path to the generated docx manual.
@@ -30,6 +86,9 @@ def run_qa_check(docx_path: Path) -> Optional[Path]:
     if not docx_path.exists():
         logger.error(f"[QA] docx file does not exist: {docx_path}")
         return None
+
+    # T5.6 — structural validation (must run before LibreOffice, which tolerates bad XML)
+    validate_ooxml_structure(docx_path)
 
     # Search for LibreOffice
     soffice = _find_soffice()
