@@ -8,8 +8,8 @@ from manual_builder.utils import set_cell_background, set_cell_margins, set_tabl
 
 def render_revision_history(doc, section_entry, manifest, style):
     """
-    Renders the 6-column revision history table as defined in revision_history.yaml.
-    Columns: Revision No | Revision Date | Revision By | Approved Date | Approved By | Description
+    Renders the revision history table as defined in revision_history.yaml.
+    Supports dynamic columns from the client style config.
     """
     # Add section heading
     add_styled_heading(doc, section_entry.heading or "Revision History", level=1, style_config=style)
@@ -25,7 +25,6 @@ def render_revision_history(doc, section_entry, manifest, style):
 
     entries = data.get("entries", [])
     if not entries:
-        # Placeholder entry if empty
         entries = [{
             "revision": "1.0",
             "date": "",
@@ -35,28 +34,28 @@ def render_revision_history(doc, section_entry, manifest, style):
             "description": "Initial version"
         }]
 
-    # Create table (rows = header + data rows, cols = 6)
-    table = doc.add_table(rows=1 + len(entries), cols=6)
+    # Load dynamic columns from style
+    custom_cols = style.revision_history.get("columns")
+    if custom_cols:
+        headers = custom_cols
+    else:
+        headers = [
+            "Revision No", "Revision Date", "Revision By",
+            "Approved Date", "Approved By", "Description"
+        ]
+
+    num_cols = len(headers)
+    table = doc.add_table(rows=1 + len(entries), cols=num_cols)
     table.autofit = False
     
     # Configure borders
     border_color = style.revision_history.get("border_color", "CCCCCC")
     set_table_borders(table, border_color)
 
-    # Set column widths
-    table.columns[0].width = Inches(0.8)  # Rev No
-    table.columns[1].width = Inches(1.0)  # Date
-    table.columns[2].width = Inches(1.1)  # By
-    table.columns[3].width = Inches(1.1)  # Approved Date
-    table.columns[4].width = Inches(1.1)  # Approved By
-    table.columns[5].width = Inches(1.4)  # Description
+    # Set column widths evenly
+    for c_idx in range(num_cols):
+        table.columns[c_idx].width = Inches(6.5 / num_cols)
 
-    # Headers
-    headers = [
-        "Revision No", "Revision Date", "Revision By",
-        "Approved Date", "Approved By", "Description"
-    ]
-    
     hdr_bg = style.revision_history.get("header_bg", style.table_header_bg)
     hdr_fg = style.revision_history.get("header_fg", style.table_header_fg)
 
@@ -74,17 +73,31 @@ def render_revision_history(doc, section_entry, manifest, style):
             r.font.bold = True
             r.font.color.rgb = hex_to_rgb(hdr_fg)
 
+    # Helper to resolve field keys dynamically
+    def get_val(entry, col_name):
+        c = col_name.lower()
+        if "version" in c or "revision no" in c or "rev" in c:
+            return entry.get("revision") or entry.get("version") or ""
+        if "date" in c:
+            if "approved" in c:
+                return entry.get("approved_date") or entry.get("date") or ""
+            return entry.get("date") or ""
+        if "by" in c or "author" in c or "reviewed" in c:
+            if "approved" in c:
+                return entry.get("approved_by") or entry.get("by") or ""
+            if "reviewed" in c:
+                return entry.get("reviewed_by") or entry.get("approved_date") or ""
+            return entry.get("by") or entry.get("author") or ""
+        if "description" in c or "change" in c:
+            return entry.get("description") or entry.get("description_of_change") or ""
+        return entry.get(col_name) or entry.get(col_name.lower()) or ""
+
     # Fill data rows
     for r_idx, entry in enumerate(entries):
         row_cells = table.rows[r_idx + 1].cells
         
-        # Populate each cell
-        row_cells[0].text = str(entry.get("revision", ""))
-        row_cells[1].text = str(entry.get("date", ""))
-        row_cells[2].text = str(entry.get("by", ""))
-        row_cells[3].text = str(entry.get("approved_date", ""))
-        row_cells[4].text = str(entry.get("approved_by", ""))
-        row_cells[5].text = str(entry.get("description", ""))
+        for idx, col_name in enumerate(headers):
+            row_cells[idx].text = str(get_val(entry, col_name))
 
         # Style cells
         fill_color = "F8FAFC" if r_idx % 2 == 1 else "FFFFFF"
@@ -104,3 +117,4 @@ def render_revision_history(doc, section_entry, manifest, style):
     
     # Page break
     doc.add_page_break()
+

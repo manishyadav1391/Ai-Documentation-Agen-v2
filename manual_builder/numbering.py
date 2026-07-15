@@ -13,16 +13,21 @@ class NumberingTracker:
     Manages section, figure, and table numbering across the entire document.
 
     Supports the NCB scheme (module-fig, e.g., "10-1", "10-2") by default.
-    Configurable via the style's ``numbering`` block.
+    Supports NCD scheme (continuous, e.g., "1", "2", "3") across modules.
+    Configurable via the style's ``numbering`` block or explicit mode.
     """
 
-    def __init__(self, style_config=None):
+    def __init__(self, style_config=None, mode: str = "module_prefixed"):
         self.style = style_config
+        self.mode = mode
         # Section stack: [(level, counter)] e.g., [(1, 10), (2, 1)]
         self._section_stack: List[Tuple[int, int]] = []
         # Counters per module: {module_num: count}
         self._figure_counter: Dict[int, int] = {}
         self._table_counter: Dict[int, int] = {}
+        # Global counters (for continuous mode)
+        self._global_figure_counter: int = 0
+        self._global_table_counter: int = 0
         # Preamble counters (for sections before modules like SOP)
         self._preamble_figure_counter: int = 0
         self._preamble_table_counter: int = 0
@@ -32,6 +37,7 @@ class NumberingTracker:
         # Current section tracking
         self._section_counters: Dict[int, int] = {}  # level -> counter
         self._current_module_num: int = 0
+
 
     # ── Section numbering ─────────────────────────────────────────────────
 
@@ -76,16 +82,18 @@ class NumberingTracker:
     def next_figure(self, module_num: int = 0) -> str:
         """
         Get the next figure number string for a module.
-
-        Uses the format from style.numbering.figure_format.
-        Default: "{module}-{fig}" → "10-1", "10-2", etc.
-
-        If module_num is 0, uses preamble counter (e.g., "5-1" for SOP).
         """
+        if self.mode == "continuous":
+            self._global_figure_counter += 1
+            fig_num = self._global_figure_counter
+            fmt = "{fig}"
+            if self.style and hasattr(self.style, 'numbering'):
+                fmt = self.style.numbering.get("figure_format", fmt)
+            return fmt.format(fig=fig_num)
+
         if module_num == 0:
             self._preamble_figure_counter += 1
             fig_num = self._preamble_figure_counter
-            # Use current section number for preamble figures
             section = self.get_current_section_number()
             return f"{section}-{fig_num}"
 
@@ -110,9 +118,15 @@ class NumberingTracker:
     def next_table(self, module_num: int = 0) -> str:
         """
         Get the next table number string for a module.
-
-        Default: "{module}-{tbl}" → "10-1", "10-2", etc.
         """
+        if self.mode == "continuous":
+            self._global_table_counter += 1
+            tbl_num = self._global_table_counter
+            fmt = "{tbl}"
+            if self.style and hasattr(self.style, 'numbering'):
+                fmt = self.style.numbering.get("table_format", fmt)
+            return fmt.format(tbl=tbl_num)
+
         if module_num == 0:
             self._preamble_table_counter += 1
             tbl_num = self._preamble_table_counter
@@ -134,6 +148,7 @@ class NumberingTracker:
             "number": number,
             "caption": caption,
         })
+
 
     # ── Caption registries ────────────────────────────────────────────────
 

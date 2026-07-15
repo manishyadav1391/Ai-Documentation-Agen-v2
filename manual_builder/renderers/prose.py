@@ -32,13 +32,15 @@ def _apply_inline_formatting(run_target, text, style):
         r.font.color.rgb = hex_to_rgb(style.get_color("body_text"))
 
 
-def render_prose(doc, section_entry, manifest, style):
+def render_prose(doc, section_entry, manifest, style, heading_text: str = None):
     """
     Reads a markdown file, parses headings, bullets, bold/italic, and renders to docx.
     """
-    # 1. Heading from manifest
-    if section_entry.heading:
-        add_styled_heading(doc, section_entry.heading, level=1, style_config=style)
+    # 1. Heading
+    title = heading_text if heading_text is not None else section_entry.heading
+    if title:
+        add_styled_heading(doc, title, level=1, style_config=style)
+
 
     prose_path = manifest.get_source_path(section_entry.source)
     if not prose_path.exists():

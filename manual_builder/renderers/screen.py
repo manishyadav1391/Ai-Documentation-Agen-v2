@@ -7,12 +7,14 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from PIL import Image as PILImage
 from manual_builder.utils import add_styled_heading, add_body_paragraph, hex_to_rgb
 from manual_builder.renderers.field_table import render_field_table
+from docbot.export.word_fields import add_caption
 
 
 def render_screen(doc, screen_index, session_dir, content_data, screen_meta, style, numbering):
     """
     Renders a screen section including headings, purpose, breadcrumbs,
-    screenshots, captions, field table, and action bullets.
+    screenshots, captions, field list (table or bullets), steps (with crops),
+    notes and action bullets.
     """
     module_num = numbering.current_module
     
@@ -25,6 +27,8 @@ def render_screen(doc, screen_index, session_dir, content_data, screen_meta, sty
         f"Screen {screen_index}"
     )
 
+    # NCD rule: if the module has exactly one screen and numbering mode is continuous,
+    # render_module may have already set it or handled it. But by default:
     # Add Heading 2 for the screen (e.g., "10.1 Add Case")
     screen_number_str = numbering.enter_section(level=2)
     add_styled_heading(doc, screen_name, level=2, style_config=style, numbering=screen_number_str)
@@ -66,7 +70,6 @@ def render_screen(doc, screen_index, session_dir, content_data, screen_meta, sty
         add_body_paragraph(doc, nav_instructions, font_name=style.body_font, size_pt=style.body_size, color_hex=style.get_color("body_text"))
 
     # 5. Screen Figures (Screenshots)
-    # Phase C introduces multiple states/figures under the screen
     figures_list = content_data.get("figures", [])
     if not figures_list:
         # Default/Fallback to a single annotated screenshot
@@ -108,33 +111,26 @@ def render_screen(doc, screen_index, session_dir, content_data, screen_meta, sty
         except Exception:
             p_img.add_run().add_picture(str(fig_path), width=Inches(max_w))
 
-        # Figure Caption
-        p_cap = doc.add_paragraph()
-        p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p_cap.paragraph_format.space_before = Pt(4)
-        p_cap.paragraph_format.space_after = Pt(14)
-        
-        # Get next figure number
-        fig_number_str = numbering.next_figure(module_num)
-        
-        r_fig = p_cap.add_run(f"{figure_prefix} {fig_number_str} ")
-        r_fig.font.name = style.body_font
-        r_fig.font.bold = True
-        r_fig.font.size = Pt(style.figures.get("caption_size_pt", 10))
-        r_fig.font.color.rgb = hex_to_rgb(style.get_color("secondary"))
-
+        # W4 Figure Caption using native SEQ fields
         caption_note = fig_entry.get("caption_note", "")
         fig_name = f"{screen_name} ({caption_note})" if caption_note else screen_name
-        r_cap = p_cap.add_run(fig_name)
-        r_cap.font.name = style.body_font
-        r_cap.font.size = Pt(style.figures.get("caption_size_pt", 10))
-        r_cap.font.italic = style.figures.get("caption_style", "italic") == "italic"
-        r_cap.font.color.rgb = hex_to_rgb(style.get_color("muted"))
+        
+        fig_number_str = numbering.next_figure(module_num)
+        
+        add_caption(
+            doc,
+            prefix=figure_prefix,
+            caption_text=fig_name,
+            style_cfg=style,
+            seq_name="Figure",
+            module_num=module_num if numbering.mode == "module_prefixed" else None,
+            font_size_pt=style.figures.get("caption_size_pt", 10),
+        )
 
         # Register caption in tracker
         numbering.register_figure(fig_number_str, fig_name)
 
-    # 6. Field Details Table
+    # 6. Field Details (Table vs Bullets)
     field_details = content_data.get("field_details", [])
     if not field_details and "field_descriptions" in content_data:
         # Fallback to old format (transform to 4-column)
@@ -148,26 +144,48 @@ def render_screen(doc, screen_index, session_dir, content_data, screen_meta, sty
                 "sample": "Sample text"
             })
 
+    # Read configuration for field presentation style (bullets vs table)
+    field_style = style.raw.get("fields", {}).get("style", "table")
+
     if field_details:
-        tbl_number_str = numbering.next_table(module_num)
-        render_field_table(doc, screen_index, field_details, style, tbl_number_str)
-        
-        # Register in tracker
-        caption_text = field_details[0].get("field_name", "").split(" -> ")[0] if field_details else "Field Details"
-        numbering.register_table(tbl_number_str, caption_text)
+        if field_style == "bullets":
+            p_fld_hdr = doc.add_paragraph()
+            p_fld_hdr.paragraph_format.space_before = Pt(6)
+            p_fld_hdr.paragraph_format.space_after = Pt(4)
+            r_fld_hdr = p_fld_hdr.add_run("Field Descriptions:")
+            r_fld_hdr.font.name = style.body_font
+            r_fld_hdr.font.bold = True
+            r_fld_hdr.font.size = Pt(style.body_size)
+            r_fld_hdr.font.color.rgb = hex_to_rgb(style.get_color("secondary"))
 
-    # 7. Action items bullet list from screen_documentation
-    screen_doc = content_data.get("screen_documentation", {}) or {}
-    actions = []
-    
-    # Collect buttons
-    for btn in screen_doc.get("buttons", []):
-        actions.append(f"Click on the {btn} button to perform the corresponding action.")
-    # Collect search criteria
-    for sf in screen_doc.get("search_filters", []):
-        actions.append(f"Filter records by entering details in the {sf} field.")
+            for f in field_details:
+                raw_name = f.get("field_name", "")
+                display_name = raw_name.split(" -> ")[-1] if " -> " in raw_name else raw_name
+                utility = f.get("utility", "")
+                # Skip empty fields or placeholders
+                if not display_name or utility == "Data input":
+                    continue
+                
+                # Format: "{name} — {utility}"
+                bullet_fmt = style.raw.get("fields", {}).get("bullet_format", "{name} — {utility}")
+                bullet_text = bullet_fmt.format(name=display_name, utility=utility)
+                
+                p_bullet = doc.add_paragraph(style="List Bullet")
+                p_bullet.paragraph_format.space_after = Pt(2)
+                r_bullet = p_bullet.add_run(bullet_text)
+                r_bullet.font.name = style.body_font
+                r_bullet.font.size = Pt(style.body_size)
+                r_bullet.font.color.rgb = hex_to_rgb(style.get_color("body_text"))
+        else:
+            tbl_number_str = numbering.next_table(module_num)
+            render_field_table(doc, screen_index, field_details, style, tbl_number_str)
+            # Register in tracker
+            caption_text = field_details[0].get("field_name", "").split(" -> ")[0] if field_details else "Field Details"
+            numbering.register_table(tbl_number_str, caption_text)
 
-    if actions:
+    # 7. Action items / steps (Ground truth compiled steps)
+    steps_list = content_data.get("steps", [])
+    if steps_list:
         p_act_hdr = doc.add_paragraph()
         p_act_hdr.paragraph_format.space_before = Pt(6)
         p_act_hdr.paragraph_format.space_after = Pt(4)
@@ -177,12 +195,72 @@ def render_screen(doc, screen_index, session_dir, content_data, screen_meta, sty
         r_act_hdr.font.size = Pt(style.body_size)
         r_act_hdr.font.color.rgb = hex_to_rgb(style.get_color("secondary"))
 
-        for act in actions[:6]: # Limit to top 6 actions
+        for step in steps_list:
+            text = step.get("text", "")
+            crop_path_rel = step.get("crop_path")
+            crop_file = session_dir / crop_path_rel if crop_path_rel else None
+            
             p_act = doc.add_paragraph(style="List Bullet")
             p_act.paragraph_format.space_after = Pt(2)
-            r_act = p_act.add_run(act)
+            
+            r_act = p_act.add_run(text)
             r_act.font.name = style.body_font
             r_act.font.size = Pt(style.body_size)
             r_act.font.color.rgb = hex_to_rgb(style.get_color("body_text"))
             
-    doc.add_page_break()
+            if crop_file and crop_file.exists():
+                p_act.add_run(" ")
+                try:
+                    # Render the small crop inline (0.25 inches height)
+                    p_act.add_run().add_picture(str(crop_file), height=Inches(0.25))
+                except Exception:
+                    pass
+    else:
+        # Fallback to old dynamic button/search filter text builder
+        screen_doc = content_data.get("screen_documentation", {}) or {}
+        actions = []
+        for btn in screen_doc.get("buttons", []):
+            actions.append(f"Click on the {btn} button to perform the corresponding action.")
+        for sf in screen_doc.get("search_filters", []):
+            actions.append(f"Filter records by entering details in the {sf} field.")
+
+        if actions:
+            p_act_hdr = doc.add_paragraph()
+            p_act_hdr.paragraph_format.space_before = Pt(6)
+            p_act_hdr.paragraph_format.space_after = Pt(4)
+            r_act_hdr = p_act_hdr.add_run("User Actions / Steps:")
+            r_act_hdr.font.name = style.body_font
+            r_act_hdr.font.bold = True
+            r_act_hdr.font.size = Pt(style.body_size)
+            r_act_hdr.font.color.rgb = hex_to_rgb(style.get_color("secondary"))
+
+            for act in actions[:6]:
+                p_act = doc.add_paragraph(style="List Bullet")
+                p_act.paragraph_format.space_after = Pt(2)
+                r_act = p_act.add_run(act)
+                r_act.font.name = style.body_font
+                r_act.font.size = Pt(style.body_size)
+                r_act.font.color.rgb = hex_to_rgb(style.get_color("body_text"))
+
+    # 8. Notes list
+    notes = content_data.get("notes") or (content_data.get("screen_documentation", {}) or {}).get("notes", [])
+    if notes:
+        for note in notes:
+            p_note = doc.add_paragraph()
+            p_note.paragraph_format.space_before = Pt(4)
+            p_note.paragraph_format.space_after = Pt(4)
+            r_note_lbl = p_note.add_run("Note: ")
+            r_note_lbl.font.name = style.body_font
+            r_note_lbl.font.bold = True
+            r_note_lbl.font.size = Pt(style.body_size)
+            r_note_lbl.font.color.rgb = hex_to_rgb(style.get_color("tertiary"))
+            
+            r_note_val = p_note.add_run(note)
+            r_note_val.font.name = style.body_font
+            r_note_val.font.size = Pt(style.body_size)
+            r_note_val.font.color.rgb = hex_to_rgb(style.get_color("body_text"))
+
+    # Configurable page break per screen (continuous flow for NCD, page break for NCB)
+    page_break = style.raw.get("layout", {}).get("page_break_per_screen", True)
+    if page_break:
+        doc.add_page_break()

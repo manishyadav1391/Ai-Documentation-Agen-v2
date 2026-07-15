@@ -44,7 +44,7 @@ def get_provider_instance(config):
         return BrowserProvider()
 
 
-def run_pipeline(client_key: str = None, module_name: str = None, module_number: int = None):
+def run_pipeline(client_key: str = None, start_url: str = None, module_name: str = None, module_number: int = None):
     """Executes the linear pipeline architecture with multi-screen traversal."""
     logger.info("=" * 55)
     logger.info("     Documentation Automation Bot — Pipeline Start     ")
@@ -60,7 +60,13 @@ def run_pipeline(client_key: str = None, module_name: str = None, module_number:
 
     # 1. Capture Phase
     logger.info("--- PHASE 1: Capture Session ---")
-    run_capture_session()
+    run_capture_session(
+        start_url=start_url or "https://google.com",
+        client_key=config.current_client,
+        module_name=module_name or "",
+        module_number=module_number
+    )
+
 
     # Locate the newly created session folder
     sessions_dir = Path(config.sessions_dir)

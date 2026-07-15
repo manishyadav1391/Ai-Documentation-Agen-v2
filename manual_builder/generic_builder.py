@@ -70,8 +70,8 @@ class GenericBuilder:
         # 3. Setup document-wide headers/footers
         setup_header_footer(self.doc, self.style, self.manifest)
 
-    def dispatch_section(self, section: SectionEntry):
-        """Route section rendering to the correct sub-renderer."""
+    def dispatch_section(self, section: SectionEntry, level: int = 1):
+        """Route section rendering to the correct sub-renderer recursively without mutating state (W18)."""
         stype = section.type.lower()
         
         # Track section numbering
@@ -79,12 +79,10 @@ class GenericBuilder:
         numbered_types = ["prose", "bullet_list", "icon_table", "group", "modules"]
         is_numbered = stype in numbered_types
 
-        if is_numbered:
-            # We track levels. 1 is top-level manifest section
-            section_number = self.numbering.enter_section(level=1)
-            # Prepend number if the section heading doesn't have it
-            # But wait, prose renderer handles heading internally or we can pass it
-            pass
+        computed_heading = section.heading
+        if is_numbered and section.heading:
+            section_number = self.numbering.enter_section(level=level)
+            computed_heading = f"{section_number} {section.heading}"
 
         if stype == "cover":
             render_cover(self.doc, section, self.manifest, self.style)
@@ -97,56 +95,22 @@ class GenericBuilder:
         elif stype == "table_of_figures":
             render_table_of_figures(self.doc, section, self.manifest, self.style)
         elif stype == "prose":
-            # For prose, prepend number if numbered
-            heading_orig = section.heading
-            if is_numbered and heading_orig:
-                section.heading = f"{self.numbering.get_current_section_number()} {heading_orig}"
-            render_prose(self.doc, section, self.manifest, self.style)
-            # Restore original heading text to not mutate config state
-            section.heading = heading_orig
+            render_prose(self.doc, section, self.manifest, self.style, heading_text=computed_heading)
         elif stype == "bullet_list":
-            heading_orig = section.heading
-            if is_numbered and heading_orig:
-                section.heading = f"{self.numbering.get_current_section_number()} {heading_orig}"
-            render_bullet_list(self.doc, section, self.manifest, self.style)
-            section.heading = heading_orig
+            render_bullet_list(self.doc, section, self.manifest, self.style, heading_text=computed_heading)
         elif stype == "icon_table":
-            # Icon tables are level 2 under SOP group usually, let numbering handle level
-            render_icon_table(self.doc, section, self.manifest, self.style)
+            render_icon_table(self.doc, section, self.manifest, self.style, heading_text=computed_heading)
         elif stype == "group":
-            heading_orig = section.heading
-            if is_numbered and heading_orig:
-                section.heading = f"{self.numbering.get_current_section_number()} {heading_orig}"
-            
-            # Group has subsections. We pass a nested dispatch callback
+            # For groups, we pass a callback that calls dispatch_section at level 2
             def nested_dispatch(sub_section):
-                # Subsections under level 1 group are level 2
-                stype_sub = sub_section.type.lower()
-                is_sub_numbered = stype_sub in numbered_types
-                if is_sub_numbered:
-                    sub_number = self.numbering.enter_section(level=2)
-                    sub_heading_orig = sub_section.heading
-                    if sub_heading_orig:
-                        sub_section.heading = f"{sub_number} {sub_heading_orig}"
-                
-                # Dispatch sub
-                if stype_sub == "prose":
-                    render_prose(self.doc, sub_section, self.manifest, self.style)
-                elif stype_sub == "bullet_list":
-                    render_bullet_list(self.doc, sub_section, self.manifest, self.style)
-                elif stype_sub == "icon_table":
-                    render_icon_table(self.doc, sub_section, self.manifest, self.style)
-                
-                if is_sub_numbered and sub_heading_orig:
-                    sub_section.heading = sub_heading_orig
-
-            render_group(self.doc, section, self.manifest, self.style, nested_dispatch)
-            section.heading = heading_orig
+                self.dispatch_section(sub_section, level=level + 1)
+            render_group(self.doc, section, self.manifest, self.style, nested_dispatch, heading_text=computed_heading)
         elif stype == "modules":
             # Placed here for pipeline integration
             pass
         else:
             print(f"[Warning] Unknown section type: {stype}")
+
 
     def build_front_matter(self):
         """Assembles front matter (cover, revision table, TOC, preambles) from manifest."""

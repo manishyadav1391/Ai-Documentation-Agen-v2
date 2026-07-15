@@ -8,13 +8,14 @@ import yaml
 from manual_builder.utils import add_styled_heading, set_cell_background, set_cell_margins, set_table_borders, hex_to_rgb
 
 
-def render_icon_table(doc, section_entry, manifest, style):
+def render_icon_table(doc, section_entry, manifest, style, heading_text: str = None):
     """
     Renders reference tables for buttons/icons.
     If icons/images are skipped or not found, renders a clean text-based table instead.
     """
-    if section_entry.heading:
-        add_styled_heading(doc, section_entry.heading, level=2, style_config=style)
+    title = heading_text if heading_text is not None else section_entry.heading
+    if title:
+        add_styled_heading(doc, title, level=2, style_config=style)
 
     table_path = manifest.get_source_path(section_entry.source)
     if not table_path.exists():

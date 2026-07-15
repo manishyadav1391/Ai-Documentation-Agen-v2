@@ -6,13 +6,14 @@ import yaml
 from manual_builder.utils import add_styled_heading, hex_to_rgb
 
 
-def render_bullet_list(doc, section_entry, manifest, style):
+def render_bullet_list(doc, section_entry, manifest, style, heading_text: str = None):
     """
     Renders bullet lists from a YAML file.
     Supports nested bullet points by checking leading spaces in YAML string items.
     """
-    if section_entry.heading:
-        add_styled_heading(doc, section_entry.heading, level=1, style_config=style)
+    title = heading_text if heading_text is not None else section_entry.heading
+    if title:
+        add_styled_heading(doc, title, level=1, style_config=style)
 
     list_path = manifest.get_source_path(section_entry.source)
     if not list_path.exists():

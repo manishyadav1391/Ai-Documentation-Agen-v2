@@ -95,11 +95,21 @@ class Labeler:
                 "table_columns": result.table_columns_doc,
                 "notes": result.notes,
             },
+            "steps": [
+                {
+                    "n": s.n,
+                    "text": s.text,
+                    "kind": s.kind,
+                    "crop_path": s.crop_path,
+                }
+                for s in result.steps
+            ],
             "figures": [
                 {"index": j + 1, "path": fig.path, "caption_note": fig.caption_note}
                 for j, fig in enumerate(screen.figures)
             ],
         }
+
         content_path.write_text(json.dumps(legacy, indent=2, ensure_ascii=False), encoding="utf-8")
 
         # Persist updated session model

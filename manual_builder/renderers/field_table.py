@@ -77,25 +77,21 @@ def render_field_table(doc, screen_index, field_details, style, table_number_str
                 r.font.size = Pt(9)
                 r.font.color.rgb = hex_to_rgb(style.get_color("body_text"))
 
-    # Table Caption below the table (NCB style: "Table 10-1 Case Identifier Table" italic, size 10)
-    p_cap = doc.add_paragraph()
-    p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_cap.paragraph_format.space_before = Pt(4)
-    p_cap.paragraph_format.space_after = Pt(12)
-
-    r_prefix = p_cap.add_run(f"{table_prefix} {table_number_str} ")
-    r_prefix.font.name = style.body_font
-    r_prefix.font.bold = True
-    r_prefix.font.size = Pt(style.tables.get("caption_size_pt", 10))
-    r_prefix.font.color.rgb = hex_to_rgb(style.get_color("secondary"))
-
-    # Caption label
+    # W4 Table Caption using native SEQ fields
     caption_text = field_details[0].get("field_name", "").split(" -> ")[0] if field_details else "Field Details"
     if "Panel" not in caption_text and "Table" not in caption_text and "Form" not in caption_text:
         caption_text = f"{caption_text} Table"
-        
-    r_text = p_cap.add_run(caption_text)
-    r_text.font.name = style.body_font
-    r_text.font.size = Pt(style.tables.get("caption_size_pt", 10))
-    r_text.font.italic = style.tables.get("caption_style", "italic") == "italic"
-    r_text.font.color.rgb = hex_to_rgb(style.get_color("muted"))
+
+    from docbot.export.word_fields import add_caption
+    module_num = int(table_number_str.split("-")[0]) if "-" in table_number_str else None
+    
+    add_caption(
+        doc,
+        prefix=table_prefix,
+        caption_text=caption_text,
+        style_cfg=style,
+        seq_name="Table",
+        module_num=module_num if style.numbering.get("table_format", "{module}-{tbl}").startswith("{module}") else None,
+        font_size_pt=style.tables.get("caption_size_pt", 10),
+    )
+

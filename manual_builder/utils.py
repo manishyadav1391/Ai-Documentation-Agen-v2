@@ -195,7 +195,7 @@ def setup_header_footer(doc, style_config, manifest=None):
     """
     Set up professional header/footer on all sections.
 
-    Header: logo (left) + document title (right)
+    Header: logo (left) + document title (right), OR full-width banner image.
     Footer: company name (left) + page number (right)
     """
     logo_path_str = style_config.logo.get("path", "")
@@ -209,6 +209,8 @@ def setup_header_footer(doc, style_config, manifest=None):
         doc_title = "User Manual"
         company = ""
 
+    hdr_mode = style_config.raw.get("header", {}).get("mode", "table")
+
     for section in doc.sections:
         section.different_first_page_header_footer = True
 
@@ -219,38 +221,56 @@ def setup_header_footer(doc, style_config, manifest=None):
         for child in list(hdr_element):
             hdr_element.remove(child)
 
-        hdr_p = OxmlElement("w:p")
-        hdr_element.append(hdr_p)
+        if hdr_mode == "banner":
+            hdr_p = header.add_paragraph()
+            hdr_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            banner_rel = style_config.raw.get("header", {}).get("banner_path", "")
+            banner_path = None
+            if banner_rel:
+                if manifest:
+                    banner_path = manifest.content_dir / banner_rel
+                if not banner_path or not banner_path.exists():
+                    banner_path = Path(banner_rel)
+            
+            if banner_path and banner_path.exists():
+                try:
+                    hdr_p.add_run().add_picture(str(banner_path), width=Inches(6.5))
+                except Exception:
+                    pass
+        else:
+            hdr_p = OxmlElement("w:p")
+            hdr_element.append(hdr_p)
 
-        table = header.add_table(rows=1, cols=2, width=Inches(6.5))
-        table.autofit = False
-        remove_table_borders(table)
-        table.columns[0].width = Inches(3.25)
-        table.columns[1].width = Inches(3.25)
+            table = header.add_table(rows=1, cols=2, width=Inches(6.5))
+            table.autofit = False
+            remove_table_borders(table)
+            table.columns[0].width = Inches(3.25)
+            table.columns[1].width = Inches(3.25)
 
-        cell_logo = table.cell(0, 0)
-        p_logo = cell_logo.paragraphs[0]
-        p_logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        if logo_path and logo_path.exists():
-            try:
-                logo_size = style_config.logo.get("size_cm", 2)
-                p_logo.add_run().add_picture(str(logo_path), height=Cm(logo_size))
-            except Exception:
-                pass
+            cell_logo = table.cell(0, 0)
+            p_logo = cell_logo.paragraphs[0]
+            p_logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            if logo_path and logo_path.exists():
+                try:
+                    logo_size = style_config.logo.get("size_cm", 2)
+                    p_logo.add_run().add_picture(str(logo_path), height=Cm(logo_size))
+                except Exception:
+                    pass
 
-        cell_title = table.cell(0, 1)
-        p_title = cell_title.paragraphs[0]
-        p_title.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        run_title = p_title.add_run(doc_title)
-        run_title.font.name = font_name
-        run_title.font.size = Pt(8.5)
-        run_title.font.italic = True
-        run_title.font.color.rgb = RGBColor(100, 100, 100)
+            cell_title = table.cell(0, 1)
+            p_title = cell_title.paragraphs[0]
+            p_title.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            run_title = p_title.add_run(doc_title)
+            run_title.font.name = font_name
+            run_title.font.size = Pt(8.5)
+            run_title.font.italic = True
+            run_title.font.color.rgb = RGBColor(100, 100, 100)
 
-        sep_p = header.add_paragraph()
-        add_bottom_border(sep_p, color_hex="CCCCCC", sz=4)
-        sep_p.paragraph_format.space_before = Pt(2)
-        sep_p.paragraph_format.space_after = Pt(0)
+            sep_p = header.add_paragraph()
+            add_bottom_border(sep_p, color_hex="CCCCCC", sz=4)
+            sep_p.paragraph_format.space_before = Pt(2)
+            sep_p.paragraph_format.space_after = Pt(0)
+
 
         # ── FOOTER ──
         footer = section.footer
