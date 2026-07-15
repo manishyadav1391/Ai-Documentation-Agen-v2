@@ -6,9 +6,11 @@ Run via the launcher UI (``python -m docbot.ui.launcher``) or directly:
 """
 
 import sys
+import json
 from pathlib import Path
 
 from loguru import logger
+
 
 from docbot.logging_setup import setup_logging, attach_session_log
 
