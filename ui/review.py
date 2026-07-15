@@ -117,21 +117,57 @@ class ReviewSessionUI:
 
         ttk.Label(canvas_frame, text="Annotated Screenshot Editor (Drag to draw, click to edit)", font=("Segoe UI", 10, "italic")).pack(anchor=tk.W, pady=2)
 
+        # Zoom Controls Frame (Issue 7)
+        self._zoom_level = 1.0
+        self._drag_start = None
+
+        zoom_bar = ttk.Frame(canvas_frame, padding=3)
+        zoom_bar.pack(fill=tk.X, pady=(0, 4))
+
+        ttk.Label(zoom_bar, text="Zoom:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=6)
+        self._zoom_var = tk.DoubleVar(value=1.0)
+        zoom_slider = tk.Scale(zoom_bar, from_=0.2, to=4.0, resolution=0.05,
+                               orient=tk.HORIZONTAL, variable=self._zoom_var, length=200,
+                               command=self._on_zoom_slider, showvalue=False, background="#F1F5F9")
+        zoom_slider.pack(side=tk.LEFT, padx=4)
+        self._zoom_label = ttk.Label(zoom_bar, text="100%", width=6)
+        self._zoom_label.pack(side=tk.LEFT)
+
+        ttk.Button(zoom_bar, text="Fit", width=5, command=self._zoom_fit).pack(side=tk.LEFT, padx=4)
+        ttk.Button(zoom_bar, text="100%", width=5, command=self._zoom_100).pack(side=tk.LEFT, padx=2)
+        ttk.Button(zoom_bar, text="200%", width=5, command=self._zoom_200).pack(side=tk.LEFT, padx=2)
+
         # Canvas container with scrollbars
         canvas_container = ttk.Frame(canvas_frame)
         canvas_container.pack(fill=tk.BOTH, expand=True)
 
         self.canvas = tk.Canvas(canvas_container, bg="#CBD5E1", cursor="cross")
-        self.canvas.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
+        h_scroll = ttk.Scrollbar(canvas_container, orient=tk.HORIZONTAL, command=self.canvas.xview)
+        v_scroll = ttk.Scrollbar(canvas_container, orient=tk.VERTICAL, command=self.canvas.yview)
+        self.canvas.config(xscrollcommand=h_scroll.set, yscrollcommand=v_scroll.set)
 
-        # Canvas drag bindings
+        h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+        v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Canvas mouse and scroll bindings
         self.canvas.bind("<ButtonPress-1>", self._on_canvas_press)
         self.canvas.bind("<B1-Motion>", self._on_canvas_drag)
         self.canvas.bind("<ButtonRelease-1>", self._on_canvas_release)
-        self.canvas.bind("<Button-3>", self._on_canvas_right_click)  # role picker
+        self.canvas.bind("<Double-Button-1>", self.on_canvas_double_click)  # Double-click to edit region
+
+        # Right-drag to pan
+        self.canvas.bind("<Button-3>", self._pan_start)
+        self.canvas.bind("<B3-Motion>", self._pan_move)
+
+        # Scroll / Ctrl+scroll to zoom
+        self.canvas.bind("<Control-MouseWheel>", self._on_ctrl_scroll)
+        self.canvas.bind("<MouseWheel>", self._on_plain_scroll)
+
         self.root.bind("<Delete>", self._on_delete_key)
         self.root.bind("<Control-z>", self._on_undo)
         self.root.bind("<Control-s>", lambda e: self._save_session())
+
 
         # Right panel: Form inputs / notebook
         right_frame = ttk.Frame(main_paned, width=580)
@@ -228,6 +264,25 @@ class ReviewSessionUI:
         self.regions_listbox = tk.Listbox(parent, font=("Segoe UI", 9), selectbackground="#3B82F6")
         self.regions_listbox.pack(fill=tk.BOTH, expand=True, pady=5)
         self.regions_listbox.bind("<<ListboxSelect>>", self._on_region_selected_from_tab)
+        self.regions_listbox.bind("<Double-1>", self.on_region_double_click)  # Double-click to edit region
+
+        # Nudge Controls Frame (Issue 7)
+        nudge_frame = ttk.LabelFrame(parent, text="Fine-Tune Bounding Box (select first)")
+        nudge_frame.pack(fill=tk.X, pady=6, padx=4)
+
+        move_row = ttk.Frame(nudge_frame)
+        move_row.pack(pady=3, fill=tk.X)
+        ttk.Label(move_row, text="Move:").pack(side=tk.LEFT, padx=6)
+        for sym, attr, delta in [("↑", "y", -5), ("↓", "y", 5), ("←", "x", -5), ("→", "x", 5)]:
+            ttk.Button(move_row, text=sym, width=3,
+                      command=lambda a=attr, d=delta: self.nudge_selected(a, d)).pack(side=tk.LEFT, padx=2)
+
+        size_row = ttk.Frame(nudge_frame)
+        size_row.pack(pady=3, fill=tk.X)
+        ttk.Label(size_row, text="Resize:").pack(side=tk.LEFT, padx=4)
+        for sym, attr, delta in [("W+", "w", 5), ("W−", "w", -5), ("H+", "h", 5), ("H−", "h", -5)]:
+            ttk.Button(size_row, text=sym, width=3,
+                      command=lambda a=attr, d=delta: self.nudge_selected(a, d)).pack(side=tk.LEFT, padx=2)
 
         region_edit_frame = ttk.Frame(parent)
         region_edit_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=10)
@@ -238,6 +293,7 @@ class ReviewSessionUI:
         self.region_label_entry.bind("<KeyRelease>", self._on_region_label_changed)
 
         ttk.Button(region_edit_frame, text="Delete Region", command=self._delete_active_region).grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=8)
+
 
 
     # ── Sidebar & Navigation ──────────────────────────────────────────────────
@@ -362,16 +418,7 @@ class ReviewSessionUI:
             regions.append({
                 "id": r.id,
                 "role": r.role,
-                "bounding_box": r.bounding_box.model_dump(),
-                "elements_contained": r.elements_contained,
-                "label": r.label,
-                "deleted": r.deleted
-            })
-        final_path.write_text(json.dumps(regions, indent=2), encoding="utf-8")
-
-    # ── Canvas Graphics & Direct Manipulation ─────────────────────────────────
-
-    def _load_canvas_image(self):
+        def _load_canvas_image(self):
         img_path = self.session_dir / self.screen.screenshot
         if not img_path.exists():
             # try normal viewport or full screenshot fallbacks
@@ -383,42 +430,56 @@ class ReviewSessionUI:
             return
 
         self.pil_image = Image.open(img_path)
+        self.orig_w, self.orig_h = self.pil_image.size
         
-        # Auto-scale image to fit canvas comfortably
-        cw, ch = 850, 700
-        iw, ih = self.pil_image.size
-        self.scale = min(cw / iw, ch / ih, 1.0)
+        # Calculate fit zoom level initially
+        self.canvas.update_idletasks()
+        canvas_w = self.canvas.winfo_width() or 850
+        canvas_h = self.canvas.winfo_height() or 700
+        fit_zoom = min(canvas_w / self.orig_w, canvas_h / self.orig_h, 1.0)
+        self._zoom_level = max(0.1, min(fit_zoom, 6.0))
+        self._zoom_var.set(self._zoom_level)
+        self._zoom_label.config(text=f"{int(self._zoom_level * 100)}%")
+
+        self._render_canvas()
+
+    def _render_canvas(self):
+        if not hasattr(self, "pil_image") or self.pil_image is None:
+            return
+
+        z = self._zoom_level
+        new_w = max(1, int(self.orig_w * z))
+        new_h = max(1, int(self.orig_h * z))
+
+        resample = Image.Resampling.LANCZOS if z < 1.0 else Image.Resampling.NEAREST
+        self.scaled_image = self.pil_image.resize((new_w, new_h), resample)
         
-        self.scaled_image = self.pil_image.resize((int(iw * self.scale), int(ih * self.scale)), Image.Resampling.LANCZOS)
         master = tk._default_root if tk._default_root is not None else self.root
         self.photo_image = ImageTk.PhotoImage(self.scaled_image, master=master)
 
-
-
         self.canvas.delete(tk.ALL)
-        self.canvas.config(width=self.photo_image.width(), height=self.photo_image.height())
+        self.canvas.config(scrollregion=(0, 0, new_w, new_h))
         self.bg_image_id = self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo_image)
-        self.canvas.image = self.photo_image  # Keep reference to prevent garbage collection!
+        self.canvas.image = self.photo_image
 
-
-        # Redraw existing regions
         self._redraw_regions()
-
+        self._highlight_active_region()
 
     def _redraw_regions(self):
         # Clear drawn boxes (but keep the background screenshot)
         bg_id = getattr(self, "bg_image_id", None)
         for item in list(self.canvas.find_all()):
-            if item != bg_id:
-                self.canvas.delete(item)
+            if "box_overlay" in self.canvas.gettags(item) or item != bg_id:
+                if item != bg_id:
+                    self.canvas.delete(item)
 
-
+        z = self._zoom_level
         for r in self.screen.regions:
             if r.deleted:
                 continue
             bb = r.bounding_box
-            x1, y1 = bb.x * self.scale, bb.y * self.scale
-            x2, y2 = (bb.x + bb.width) * self.scale, (bb.y + bb.height) * self.scale
+            x1, y1 = bb.x * z, bb.y * z
+            x2, y2 = (bb.x + bb.width) * z, (bb.y + bb.height) * z
             
             # Select colors based on role
             color = "#EF4444"  # red
@@ -428,22 +489,45 @@ class ReviewSessionUI:
                 color = "#3B82F6"  # blue
                 
             # Draw rectangle
-            rect_id = self.canvas.create_rectangle(x1, y1, x2, y2, outline=color, width=2, activefill="", stipple="")
+            rect_id = self.canvas.create_rectangle(x1, y1, x2, y2, outline=color, width=2, tags="box_overlay")
             
-            # Label background & text
+            # Label text
             lbl = r.label or r.role
-            lbl_id = self.canvas.create_text(x1 + 5, y1 + 5, anchor=tk.NW, text=lbl, fill=color, font=("Segoe UI", 9, "bold"))
+            lbl_id = self.canvas.create_text(x1 + 5, y1 + 5, anchor=tk.NW, text=lbl, fill=color, font=("Segoe UI", 9, "bold"), tags="box_overlay")
             
             # Keep map from canvas item to region model
             self.canvas.tag_bind(rect_id, "<ButtonPress-1>", lambda e, rid=r.id: self._on_region_clicked(rid))
 
+    def _highlight_active_region(self):
+        self.canvas.delete("highlight_overlay")
+        if not self.active_region_id:
+            return
+        r = next((x for x in self.screen.regions if x.id == self.active_region_id), None)
+        if not r or r.deleted:
+            return
+        bb = r.bounding_box
+        z = self._zoom_level
+        cx1 = bb.x * z
+        cy1 = bb.y * z
+        cx2 = (bb.x + bb.width) * z
+        cy2 = (bb.y + bb.height) * z
+        self.canvas.create_rectangle(cx1, cy1, cx2, cy2, outline="#3B82F6", width=3, tags="highlight_overlay")
+
     def _on_region_clicked(self, rid: str):
         self.active_region_id = rid
+        self._highlight_active_region()
+        
         # Select region in tree/listbox
         for i, r in enumerate(self.screen.regions):
             if r.id == rid:
                 self.regions_listbox.select_clear(0, tk.END)
-                self.regions_listbox.select_set(i)
+                # Find corresponding index in listbox (listbox only has non-deleted regions)
+                # For simplicity, search for the item text ending with (rid)
+                for list_idx in range(self.regions_listbox.size()):
+                    if f"({rid})" in self.regions_listbox.get(list_idx):
+                        self.regions_listbox.select_set(list_idx)
+                        self.regions_listbox.see(list_idx)
+                        break
                 self._load_region_inputs(r)
                 break
 
@@ -451,26 +535,89 @@ class ReviewSessionUI:
         self.region_label_entry.delete(0, tk.END)
         self.region_label_entry.insert(0, r.label)
 
-    # ── Canvas Interactive Draw ───────────────────────────────────────────────
+    # ── Canvas Interactive Draw & Zoom & Pan ──────────────────────────────────
+
+    def _on_zoom_slider(self, value):
+        self._zoom_level = max(0.1, min(float(value), 6.0))
+        self._zoom_label.config(text=f"{int(self._zoom_level * 100)}%")
+        self._render_canvas()
+
+    def _zoom_fit(self):
+        if not hasattr(self, "orig_w") or not self.orig_w:
+            return
+        self.canvas.update_idletasks()
+        canvas_w = self.canvas.winfo_width() or 850
+        canvas_h = self.canvas.winfo_height() or 700
+        fit_zoom = min(canvas_w / self.orig_w, canvas_h / self.orig_h, 1.0)
+        self._zoom_level = max(0.1, min(fit_zoom, 6.0))
+        self._zoom_var.set(self._zoom_level)
+        self._zoom_label.config(text=f"{int(self._zoom_level * 100)}%")
+        self._render_canvas()
+
+    def _zoom_100(self):
+        self._zoom_level = 1.0
+        self._zoom_var.set(1.0)
+        self._zoom_label.config(text="100%")
+        self._render_canvas()
+
+    def _zoom_200(self):
+        self._zoom_level = 2.0
+        self._zoom_var.set(2.0)
+        self._zoom_label.config(text="200%")
+        self._render_canvas()
+
+    def _on_ctrl_scroll(self, event):
+        if event.delta > 0:
+            self._zoom_level = min(6.0, self._zoom_level * 1.15)
+        else:
+            self._zoom_level = max(0.1, self._zoom_level / 1.15)
+        self._zoom_var.set(self._zoom_level)
+        self._zoom_label.config(text=f"{int(self._zoom_level * 100)}%")
+        self._render_canvas()
+
+    def _on_plain_scroll(self, event):
+        self.canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+
+    def _pan_start(self, event):
+        # Translate to canvas view coords
+        self._drag_start = (event.x, event.y)
+        self.canvas.config(cursor="fleur")
+
+    def _pan_move(self, event):
+        if self._drag_start:
+            dx = self._drag_start[0] - event.x
+            dy = self._drag_start[1] - event.y
+            self.canvas.xview_scroll(int(dx / 8), "units")
+            self.canvas.yview_scroll(int(dy / 8), "units")
+            self._drag_start = (event.x, event.y)
 
     def _on_canvas_press(self, event):
-        self.draw_start_x = event.x
-        self.draw_start_y = event.y
-        self.draw_rect_id = self.canvas.create_rectangle(event.x, event.y, event.x, event.y, outline="#F59E0B", width=2)
+        # We need absolute coordinates on the scrollable canvas area
+        cx = self.canvas.canvasx(event.x)
+        cy = self.canvas.canvasy(event.y)
+        self.draw_start_x = cx
+        self.draw_start_y = cy
+        self.draw_rect_id = self.canvas.create_rectangle(cx, cy, cx, cy, outline="#F59E0B", width=2)
 
     def _on_canvas_drag(self, event):
-        self.canvas.coords(self.draw_rect_id, self.draw_start_x, self.draw_start_y, event.x, event.y)
+        cx = self.canvas.canvasx(event.x)
+        cy = self.canvas.canvasy(event.y)
+        self.canvas.coords(self.draw_rect_id, self.draw_start_x, self.draw_start_y, cx, cy)
 
     def _on_canvas_release(self, event):
-        # Calculate real coordinate bounding box
-        x1 = min(self.draw_start_x, event.x) / self.scale
-        y1 = min(self.draw_start_y, event.y) / self.scale
-        w = abs(self.draw_start_x - event.x) / self.scale
-        h = abs(self.draw_start_y - event.y) / self.scale
+        cx = self.canvas.canvasx(event.x)
+        cy = self.canvas.canvasy(event.y)
         
         # Clean up temp drag rect
         self.canvas.delete(self.draw_rect_id)
+        self.canvas.config(cursor="cross")
 
+        # Convert back to original image coordinates by dividing by zoom level
+        z = self._zoom_level
+        x1 = min(self.draw_start_x, cx) / z
+        y1 = min(self.draw_start_y, cy) / z
+        w = abs(self.draw_start_x - cx) / z
+        h = abs(self.draw_start_y - cy) / z
         # Ignore tiny clicks/drags
         if w < 10 or h < 10:
             return
@@ -506,6 +653,7 @@ class ReviewSessionUI:
         self.screen.regions.append(new_region)
         self._redraw_regions()
         self._refresh_regions_listbox()
+
 
 
     def _on_canvas_right_click(self, event):
@@ -634,6 +782,127 @@ class ReviewSessionUI:
                     self._redraw_regions()
                     self._refresh_regions_listbox()
                     break
+
+    def on_region_double_click(self, event):
+        sel = self.regions_listbox.curselection()
+        if not sel:
+            return
+        selected_text = self.regions_listbox.get(sel[0])
+        import re
+        m = re.search(r"\((r\d+)\)$", selected_text)
+        if m:
+            rid = m.group(1)
+            region = next((x for x in self.screen.regions if x.id == rid), None)
+            if region:
+                self.open_region_edit_dialog(region)
+
+    def on_canvas_double_click(self, event):
+        # We need absolute coordinates on the scrollable canvas area
+        cx = self.canvas.canvasx(event.x)
+        cy = self.canvas.canvasy(event.y)
+        orig_x = cx / self._zoom_level
+        orig_y = cy / self._zoom_level
+        for r in reversed(self.screen.regions):
+            if r.deleted:
+                continue
+            bb = r.bounding_box
+            if bb.x <= orig_x <= bb.x + bb.width and bb.y <= orig_y <= bb.y + bb.height:
+                self.open_region_edit_dialog(r)
+                return
+
+    def open_region_edit_dialog(self, r: Region):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Edit Region Details")
+        dialog.geometry("440x380")
+        dialog.grab_set()
+        dialog.transient(self.root)
+
+        pad = dict(padx=14, pady=7, sticky=tk.W)
+        ttk.Label(dialog, text="Label:", font=("Segoe UI", 10)).grid(row=0, column=0, **pad)
+        entry_label = ttk.Entry(dialog, width=32, font=("Segoe UI", 10))
+        entry_label.insert(0, r.label)
+        entry_label.grid(row=0, column=1, **pad)
+        entry_label.focus_set()
+
+        ttk.Label(dialog, text="Role:", font=("Segoe UI", 10)).grid(row=1, column=0, **pad)
+        combo_role = ttk.Combobox(dialog, state="readonly", font=("Segoe UI", 10), width=22,
+                                   values=["action_button", "filter_form", "action_column",
+                                           "table_header", "navigation_bar", "page_header",
+                                           "section_heading", "view_only"])
+        combo_role.set(r.role)
+        combo_role.grid(row=1, column=1, **pad)
+
+        ttk.Label(dialog, text="X:").grid(row=2, column=0, **pad)
+        ex = ttk.Entry(dialog, width=15)
+        ex.insert(0, str(int(r.bounding_box.x)))
+        ex.grid(row=2, column=1, **pad)
+
+        ttk.Label(dialog, text="Y:").grid(row=3, column=0, **pad)
+        ey = ttk.Entry(dialog, width=15)
+        ey.insert(0, str(int(r.bounding_box.y)))
+        ey.grid(row=3, column=1, **pad)
+
+        ttk.Label(dialog, text="Width:").grid(row=4, column=0, **pad)
+        ew = ttk.Entry(dialog, width=15)
+        ew.insert(0, str(int(r.bounding_box.width)))
+        ew.grid(row=4, column=1, **pad)
+
+        ttk.Label(dialog, text="Height:").grid(row=5, column=0, **pad)
+        eh = ttk.Entry(dialog, width=15)
+        eh.insert(0, str(int(r.bounding_box.height)))
+        eh.grid(row=5, column=1, **pad)
+
+        def save_values():
+            try:
+                x_val = int(ex.get())
+                y_val = int(ey.get())
+                w_val = int(ew.get())
+                h_val = int(eh.get())
+            except ValueError:
+                messagebox.showerror("Error", "Coordinates must be integers.", parent=dialog)
+                return
+
+            label_val = entry_label.get().strip()
+            if not label_val:
+                messagebox.showerror("Error", "Label cannot be blank.", parent=dialog)
+                return
+
+            self._push_undo()
+            r.label = label_val
+            r.role = combo_role.get()
+            r.bounding_box.x = x_val
+            r.bounding_box.y = y_val
+            r.bounding_box.width = w_val
+            r.bounding_box.height = h_val
+
+            self._redraw_regions()
+            self._refresh_regions_listbox()
+            self._load_region_inputs(r)
+            dialog.destroy()
+
+        ttk.Button(dialog, text="Save Region", style="Accent.TButton", command=save_values).grid(
+                      row=6, column=0, columnspan=2, pady=14)
+
+    def nudge_selected(self, attr, delta):
+        if not self.active_region_id:
+            messagebox.showwarning("Warning", "Please select a region first.")
+            return
+        r = next((x for x in self.screen.regions if x.id == self.active_region_id), None)
+        if not r:
+            return
+        self._push_undo()
+        bb = r.bounding_box
+        if attr == "x":
+            bb.x = max(0.0, bb.x + delta)
+        elif attr == "y":
+            bb.y = max(0.0, bb.y + delta)
+        elif attr == "w":
+            bb.width = max(5.0, bb.width + delta)
+        elif attr == "h":
+            bb.height = max(5.0, bb.height + delta)
+        self._redraw_regions()
+        self._highlight_active_region()
+
 
 
     # ── Figures list actions ──────────────────────────────────────────────────
