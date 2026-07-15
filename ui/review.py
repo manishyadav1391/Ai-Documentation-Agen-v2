@@ -390,7 +390,9 @@ class ReviewSessionUI:
         self.scale = min(cw / iw, ch / ih, 1.0)
         
         self.scaled_image = self.pil_image.resize((int(iw * self.scale), int(ih * self.scale)), Image.Resampling.LANCZOS)
-        self.photo_image = ImageTk.PhotoImage(self.scaled_image, master=self.root)
+        master = tk._default_root if tk._default_root is not None else self.root
+        self.photo_image = ImageTk.PhotoImage(self.scaled_image, master=master)
+
 
 
         self.canvas.delete(tk.ALL)

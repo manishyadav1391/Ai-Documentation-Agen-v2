@@ -66,3 +66,17 @@ Add support for capturing multiple states of the same screen. Update the mouse-c
 
 Single middle-click: capture new screen (current behavior)
 Shift + middle-click: capture as additional state of current screen (new)
+
+
+
+
+Alt + C -> Normal capture
+Alt + F -> Force full-page capture
+Alt + S -> Capture as state of previous screen
+Alt + Q -> Quit session and start
+
+
+Ctrl + Shift + C or Alt + 1 -> Normal capture
+Ctrl + Shift + F or Alt + 2 -> Force full-page capture
+Ctrl + Shift + S or Alt + 3 -> Capture as state of previous screen
+Ctrl + Shift + Q or Alt + 4 -> Quit session and start
