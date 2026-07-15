@@ -358,8 +358,12 @@ class LauncherUI:
         self.session_listbox.delete(0, tk.END)
         sessions_dir = Path("sessions")
         if sessions_dir.exists():
-            for session in sorted(sessions_dir.glob("session_*")):
+            # List all subdirectories, ignoring hidden ones
+            dirs = [p for p in sessions_dir.iterdir() if p.is_dir() and not p.name.startswith(".")]
+            # Sort by directory name
+            for session in sorted(dirs, key=lambda p: p.name):
                 self.session_listbox.insert(tk.END, session.name)
+
 
     def start_recording(self):
         start_url = self.url_entry.get().strip() or "https://google.com"
