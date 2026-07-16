@@ -123,6 +123,8 @@ class Region(BaseModel):
     elements_contained: list[str] = PydanticField(default_factory=list)
     label: str = ""
     deleted: bool = False
+    callout_x: float | None = None   # manual callout anchor (image coords)
+    callout_y: float | None = None   # None = automatic placement
 
 
 # ---------------------------------------------------------------------------

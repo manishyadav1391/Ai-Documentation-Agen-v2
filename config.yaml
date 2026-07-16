@@ -28,4 +28,4 @@ render:
   callout_border_width: 2
 capture:
   mode: viewport
-  scroll_capture: true
+  scroll_capture: false

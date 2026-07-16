@@ -10,8 +10,8 @@ fonts:
   heading_family: Segoe UI
   code_family: Consolas
 colors:
-  primary: FF8000
-  secondary: FF8000
+  primary: '743303'
+  secondary: D90680
   tertiary: C00000
   accent: 3B82F6
   table_header_bg: 1B365D
@@ -85,7 +85,7 @@ toc:
   max_depth: 3
   dot_leaders: true
 logo:
-  path: C:/Users/stadmin/Downloads/logo.png
+  path: C:/Users/stadmin/Downloads/National-Emblem-of-India.jpg
   header_left: true
   size_cm: 2
 footer:

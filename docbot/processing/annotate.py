@@ -72,6 +72,8 @@ class _Region:
     x: int; y: int; w: int; h: int
     label: str; role: str
     callout_anchor: str = "right"
+    callout_x: float | None = None
+    callout_y: float | None = None
 
 
 def _get_font(size: int) -> ImageFont.FreeTypeFont:
@@ -355,6 +357,8 @@ def render_annotations(
             h=int(bbox.get("height", 0) * dpr),
             label=r.get("label") or r.get("elements_contained", [""])[0] or "Region",
             role=r.get("role", "filter_form"),
+            callout_x=r.get("callout_x"),
+            callout_y=r.get("callout_y"),
         ))
 
     img = Image.open(img_path).convert("RGBA")
@@ -393,10 +397,14 @@ def render_annotations(
 
         # mode == "callouts" (default)
         cw, ch, lines = _measure_callout(region.label, font, wrap_chars)
-        cx, cy = _place_callout(
-            region, cw, ch, img.width, img.height,
-            other_regions=regions, placed=placed, gap=50,
-        )
+        if region.callout_x is not None and region.callout_y is not None:
+            cx = int(region.callout_x - cw / 2)
+            cy = int(region.callout_y - ch / 2)
+        else:
+            cx, cy = _place_callout(
+                region, cw, ch, img.width, img.height,
+                other_regions=regions, placed=placed, gap=50,
+            )
         placed.append((cx, cy, cx + cw, cy + ch))  # W27: register this callout
         _draw_leader(draw, region, (cx, cy, cx + cw, cy + ch), palette["stroke"])
         _draw_callout_bubble(draw, cx, cy, cw, ch, lines, font, palette, border_width)

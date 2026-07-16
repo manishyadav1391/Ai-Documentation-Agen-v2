@@ -326,8 +326,8 @@ def render_screen(doc, screen_index, session_dir, content_data, screen_meta, sty
             crop_path_rel = step.get("crop_path")
             crop_file = session_dir / crop_path_rel if crop_path_rel else None
 
-            # F2: Use numbered list
-            p_act = doc.add_paragraph(style="List Number")
+            # Use bullet list instead of numbered list
+            p_act = doc.add_paragraph(style="List Bullet")
             p_act.paragraph_format.space_after = Pt(2)
 
             # F2: Bold **text between asterisks** or <bold> markers
@@ -358,7 +358,7 @@ def render_screen(doc, screen_index, session_dir, content_data, screen_meta, sty
             r_act_hdr.font.color.rgb = hex_to_rgb(style.get_color("secondary"))
 
             for act in actions[:6]:
-                p_act = doc.add_paragraph(style="List Number")
+                p_act = doc.add_paragraph(style="List Bullet")
                 p_act.paragraph_format.space_after = Pt(2)
                 _add_step_text_with_bold(p_act, act, style)
 

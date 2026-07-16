@@ -4,21 +4,27 @@ DocBot v3 — Playwright capture session.
 Runs a headed Chromium browser, instruments every page/tab with the
 event hook script, and handles the writer's middle-click gestures.
 
-Key improvements over v2
-------------------------
-- W7 (High-DPI):  device_scale_factor=1 on launch so DOM CSS pixels
-  and screenshot pixels are 1:1.  devicePixelRatio recorded per capture.
-- W8 (Fixed/sticky): viewport mode avoids the repositioning problem;
-  bboxes stored in document coords (scrollX+scrollY added in JS).
-- W9 (Multi-tab): context.on("page", _setup_page) instruments every
-  new tab automatically.
-- W17: session stored as session.json (pydantic model), not 8 loose files.
-- W19: events recorded for deterministic step compilation.
-- T3.6: viewport / full_page / both modes + scroll_capture segmentation.
+CHANGE LOG (visible-area capture fix)
+-------------------------------------
+FIX-1  Middle-click now captures EXACTLY what is visible on the monitor
+       at the writer's CURRENT scroll position. The lazy-render
+       scroll-to-bottom/scroll-to-top dance is now done ONLY for
+       full-page captures (it was resetting the view to the top of the
+       page before every screenshot).
+FIX-2  In viewport captures, elements are FILTERED to those visible in
+       the viewport and their bounding boxes are TRANSLATED into
+       viewport coordinates (bbox_document - scroll). Regions, labels
+       and annotations therefore cover ONLY the visible area and align
+       pixel-perfect with the screenshot. (Fixed/sticky elements work
+       too: the JS added scroll to their rects, so the same subtraction
+       lands them correctly.)
+FIX-3  Scroll segmentation (seg1/seg2) only runs when
+       capture.scroll_capture is true AND mode is viewport. Set
+       scroll_capture: false in config.yaml to disable it entirely.
 
-Gesture table:
-  Middle-click          → capture (configured mode)
-  Ctrl + Middle-click   → force full-page for this capture
+Gesture table (unchanged):
+  Middle-click          → capture VISIBLE screen (configured mode)
+  Ctrl + Middle-click   → force FULL-PAGE for this capture
   Shift + Middle-click  → capture as state of previous screen (always viewport)
   Double Middle-click   → quit session and start processing
 """
@@ -26,7 +32,6 @@ Gesture table:
 from __future__ import annotations
 
 import hashlib
-import io
 import threading
 import uuid
 from datetime import datetime
@@ -34,18 +39,20 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
-from playwright.sync_api import sync_playwright, Page, BrowserContext
+from playwright.sync_api import sync_playwright, Page
 
 from config import get_config
 from docbot.logging_setup import attach_session_log
 from docbot.models import (
-    BBox, Element, Event, Figure, Region, Screen, SessionModel, SessionStore,
+    BBox, Element, Event, Figure, Screen, SessionModel, SessionStore,
 )
 
 # Load injected.js once at import time
 _JS_HOOK = (Path(__file__).parent / "injected.js").read_text(encoding="utf-8")
 
-# DOM extraction JS — run on each capture to get current page elements
+# DOM extraction JS — run on each capture to get current page elements.
+# Coordinates are DOCUMENT coordinates (rect + scroll); for viewport
+# captures they are translated to viewport space in Python (FIX-2).
 _DOM_EXTRACT_JS = """
 () => {
   const data = [];
@@ -93,12 +100,14 @@ _DOM_EXTRACT_JS = """
     if (rect.width < 5 || rect.height < 5) return;
     const text = el.innerText ? el.innerText.trim() : null;
     if (!text || text.length < 2) return;
+    const pos = window.getComputedStyle(el).position;
     data.push({
       element_class: 'navigation', tag: 'a', type: 'nav_link', role: 'link',
       name: text, id: el.id || ('nav_' + i), required: false, max_length: null,
       pattern: null, placeholder: null, accessible_name: text,
       bounding_box: {x: rect.x + scrollX, y: rect.y + scrollY, width: rect.width, height: rect.height},
-      ancestor_section: 'navigation', form_id: null, is_fixed: false
+      ancestor_section: 'navigation', form_id: null,
+      is_fixed: (pos === 'fixed' || pos === 'sticky')
     });
   });
 
@@ -158,6 +167,16 @@ _PAGE_CONTEXT_JS = """
 }
 """
 
+# Viewport geometry at THIS INSTANT (current scroll position)
+_VIEWPORT_BOX_JS = """
+() => ({
+    x: window.scrollX,
+    y: window.scrollY,
+    width: window.innerWidth,
+    height: window.innerHeight
+})
+"""
+
 
 class CaptureSession:
     """Manages a single recording session from start to close."""
@@ -179,11 +198,10 @@ class CaptureSession:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         session_id = ts
         if session_dir is None:
-            # Clean module name for filesystem
             clean_module = "".join(c if c.isalnum() else "_" for c in module_name).strip("_")
             prefix = f"{clean_module}_{ts}" if clean_module else f"session_{ts}"
             session_dir = cfg.sessions_path / prefix
-            
+
         session_dir.mkdir(parents=True, exist_ok=True)
         self.session_dir = session_dir
 
@@ -204,7 +222,7 @@ class CaptureSession:
             "state_capture_requested": False,
             "quit": False,
             "screen_index": 1,
-            "pending_events": [],            # list[str] — raw JSON strings from JS
+            "pending_events": [],
             "last_viewport_screenshot": None,
         }
         self._lock = threading.Lock()
@@ -224,7 +242,6 @@ class CaptureSession:
                 headless=False,
                 args=["--start-maximized"],
             )
-            # Let browser control viewport (DPI mismatch handled downstream in annotator)
             context = browser.new_context(
                 no_viewport=True,
             )
@@ -240,8 +257,7 @@ class CaptureSession:
                 except Exception as e:
                     logger.warning(f"Could not restore auth state: {e}")
 
-
-            # Instrument every new page (W9 multi-tab fix)
+            # Instrument every new page / tab (W9 multi-tab fix)
             context.on("page", self._setup_page)
 
             page = context.new_page()
@@ -249,12 +265,11 @@ class CaptureSession:
 
             logger.info("=" * 55)
             logger.info("Browser active. Controls:")
-            logger.info("  Capture screen        → Middle-click  OR  Alt + C  OR  Ctrl + Shift + C")
-            logger.info("  Force full-page       → Ctrl+Middle-click  OR  Alt + F  OR  Ctrl + Shift + F")
-            logger.info("  Capture state         → Shift+Middle-click  OR  Alt + S  OR  Ctrl + Shift + S")
-            logger.info("  Quit & Process        → Double Middle-click  OR  Alt + Q  OR  Ctrl + Shift + Q")
+            logger.info("  Capture VISIBLE screen → Middle-click  OR  Alt + C  OR  Ctrl + Shift + C")
+            logger.info("  Force FULL page        → Ctrl+Middle-click  OR  Alt + F  OR  Ctrl + Shift + F")
+            logger.info("  Capture state          → Shift+Middle-click  OR  Alt + S  OR  Ctrl + Shift + S")
+            logger.info("  Quit & Process         → Double Middle-click  OR  Alt + Q  OR  Ctrl + Shift + Q")
             logger.info("=" * 55)
-
 
             # Event loop — non-blocking poll
             while not self._state["quit"]:
@@ -271,7 +286,6 @@ class CaptureSession:
 
             browser.close()
 
-        # Persist session model
         SessionStore.save(self.session, self.session_dir)
         logger.info(
             f"Session closed. {len(self.session.screens)} screens captured. "
@@ -288,17 +302,13 @@ class CaptureSession:
         page_id = str(uuid.uuid4())[:8]
         self._pages[page_id] = page
 
-        # Inject a page-specific id so events are tagged correctly
         page.add_init_script(f"window.__docbotPageId = '{page_id}';")
-
-        # Inject event hooks
         page.add_init_script(_JS_HOOK)
         try:
             page.evaluate(_JS_HOOK)
         except Exception:
-            pass  # Page may not be ready yet; add_init_script handles future loads
+            pass  # add_init_script covers future navigations
 
-        # Expose Python functions to browser JS
         page.expose_function("docbotEvent", self._on_js_event)
         page.expose_function("triggerCapture", self._on_capture)
         page.expose_function("triggerFullPageCapture", self._on_full_page_capture)
@@ -312,7 +322,6 @@ class CaptureSession:
     # ------------------------------------------------------------------ #
 
     def _on_js_event(self, raw_json: str) -> None:
-        """Receive an event from the JS hook and queue it."""
         with self._lock:
             self._state["pending_events"].append(raw_json)
 
@@ -338,7 +347,6 @@ class CaptureSession:
     # ------------------------------------------------------------------ #
 
     def _process_pending_captures(self, page: Page) -> None:
-        """Check state flags and execute any pending captures."""
         with self._lock:
             do_capture = self._state.pop("capture_requested", False)
             do_full = self._state.pop("full_page_capture_requested", False)
@@ -346,7 +354,6 @@ class CaptureSession:
             pending_events = self._state["pending_events"][:]
             self._state["pending_events"].clear()
 
-        # Flush pending events into the last screen
         if pending_events and self.session.screens:
             self._flush_events(pending_events, self.session.screens[-1])
 
@@ -358,7 +365,6 @@ class CaptureSession:
             self._capture_screen(page)
 
     def _flush_events(self, raw_events: list[str], screen: Screen) -> None:
-        """Parse and append JS events to a screen."""
         import json as _json
         for raw in raw_events:
             try:
@@ -402,19 +408,37 @@ class CaptureSession:
         else:
             logger.info(f"Capturing Screen {idx}…")
 
-        # Lazy-render to trigger any lazy-loaded content
-        try:
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            page.wait_for_timeout(400)
-            page.evaluate("window.scrollTo(0, 0)")
-            page.wait_for_timeout(400)
-        except Exception:
-            pass
+        # Determine the mode for this capture.
+        # States are ALWAYS viewport (capture exactly what the writer sees).
+        if is_state:
+            mode = "viewport"
+        elif force_full_page:
+            mode = "full_page"
+        else:
+            mode = self.capture_mode
 
-        # Determine the mode for this capture
-        mode = "full_page" if force_full_page else self.capture_mode
+        # ------------------------------------------------------------------
+        # FIX-1: lazy-render scroll dance ONLY for full-page captures.
+        # For viewport captures we must NOT touch the scroll position —
+        # the writer middle-clicked on what they are LOOKING AT right now.
+        # ------------------------------------------------------------------
+        if mode in ("full_page", "both"):
+            try:
+                original_scroll = page.evaluate("({x: window.scrollX, y: window.scrollY})")
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                page.wait_for_timeout(400)
+                page.evaluate("window.scrollTo(0, 0)")
+                page.wait_for_timeout(400)
+                # Restore the writer's original position so 'both' mode
+                # viewport shot (and their browsing) is unaffected.
+                page.evaluate(
+                    f"window.scrollTo({original_scroll['x']}, {original_scroll['y']})"
+                )
+                page.wait_for_timeout(200)
+            except Exception:
+                pass
 
-        # Take the screenshot(s)
+        # Page context
         try:
             ctx = _get_page_context(page)
         except Exception as e:
@@ -434,7 +458,6 @@ class CaptureSession:
             device_pixel_ratio=float(ctx.get("device_pixel_ratio", 1.0)),
         )
 
-        # Screenshot filenames
         if is_state:
             base = f"screen_{parent_idx}_state_{state_num}"
         else:
@@ -442,6 +465,14 @@ class CaptureSession:
 
         figures: list[Figure] = []
 
+        # Viewport geometry AT THE CURRENT SCROLL POSITION — used both to
+        # clip the screenshot and to filter/translate elements (FIX-2).
+        try:
+            vp_box = page.evaluate(_VIEWPORT_BOX_JS)
+        except Exception:
+            vp_box = {"x": 0, "y": 0, "width": 1280, "height": 720}
+
+        # --- Full-page screenshot ---
         if mode in ("full_page", "both"):
             fp_name = f"{base}_full.png"
             fp_path = self.session_dir / fp_name
@@ -454,31 +485,25 @@ class CaptureSession:
             except Exception as e:
                 logger.warning(f"Full-page screenshot failed: {e}")
 
+        # --- Viewport screenshot (exactly what is on the monitor) ---
         if mode in ("viewport", "both"):
             vp_name = f"{base}_viewport.png"
             vp_path = self.session_dir / vp_name
             try:
-                # Retrieve window coordinates to clip to visible viewport only
-                vp_box = page.evaluate("""() => {
-                    return {
-                        x: window.scrollX,
-                        y: window.scrollY,
-                        width: window.innerWidth,
-                        height: window.innerHeight
-                    };
-                }""")
                 page.screenshot(path=str(vp_path), clip=vp_box)
                 if mode == "viewport":
                     screen.screenshot = vp_name
                 screen.viewport_screenshot = vp_name
                 figures.append(Figure(index=len(figures) + 1, path=vp_name,
-                                      source="viewport", scroll_y=0.0))
-                logger.debug(f"Viewport screenshot (clipped) → {vp_name}")
+                                      source="viewport",
+                                      scroll_y=float(vp_box.get("y", 0))))
+                logger.debug(
+                    f"Viewport screenshot at scroll y={vp_box.get('y', 0)} → {vp_name}"
+                )
 
-
-                # Scroll-capture segmentation (viewport mode only, W8)
+                # FIX-3: scroll segments ONLY if explicitly enabled in config.
                 if mode == "viewport" and self.scroll_capture and not is_state:
-                    scroll_figures = self._scroll_capture(page, base, len(figures))
+                    scroll_figures = self._scroll_capture(page, base, len(figures), vp_box)
                     figures.extend(scroll_figures)
 
             except Exception as e:
@@ -486,30 +511,75 @@ class CaptureSession:
 
         screen.figures = figures
 
-        # DOM extraction
+        # --- DOM extraction ---
         try:
             raw_els = page.evaluate(_DOM_EXTRACT_JS)
-            for el_dict in raw_els:
-                bbox_raw = el_dict.get("bounding_box", {})
-                screen.elements.append(Element(
-                    id=el_dict.get("id", ""),
-                    element_class=el_dict.get("element_class", "interactive"),
-                    tag=el_dict.get("tag", "input"),
-                    type=el_dict.get("type"),
-                    role=el_dict.get("role"),
-                    name=el_dict.get("name"),
-                    accessible_name=el_dict.get("accessible_name"),
-                    required=bool(el_dict.get("required", False)),
-                    placeholder=el_dict.get("placeholder"),
-                    pattern=el_dict.get("pattern"),
-                    max_length=el_dict.get("max_length"),
-                    bounding_box=BBox(**bbox_raw) if bbox_raw else BBox(),
-                    ancestor_section=el_dict.get("ancestor_section"),
-                    form_id=el_dict.get("form_id"),
-                    is_fixed=bool(el_dict.get("is_fixed", False)),
-                ))
         except Exception as e:
             logger.warning(f"DOM extraction failed for screen {idx}: {e}")
+            raw_els = []
+
+        # ------------------------------------------------------------------
+        # FIX-2: for viewport captures, keep ONLY elements visible in the
+        # viewport and translate their coordinates into viewport space so
+        # regions / labels / annotations match the screenshot exactly.
+        # Full-page captures keep document coordinates (unchanged behavior).
+        # ------------------------------------------------------------------
+        viewport_space = (mode == "viewport")
+        sx = float(vp_box.get("x", 0))
+        sy = float(vp_box.get("y", 0))
+        vw = float(vp_box.get("width", 0))
+        vh = float(vp_box.get("height", 0))
+
+        kept, dropped = 0, 0
+        for el_dict in raw_els:
+            bbox_raw = el_dict.get("bounding_box", {}) or {}
+            bx = float(bbox_raw.get("x", 0))
+            by = float(bbox_raw.get("y", 0))
+            bw = float(bbox_raw.get("width", 0))
+            bh = float(bbox_raw.get("height", 0))
+
+            if viewport_space:
+                # Visibility test: element rect must intersect the viewport rect.
+                # (JS stored doc coords = rect + scroll for ALL elements,
+                #  including fixed/sticky, so one uniform test/translation works.)
+                inter_x = max(0.0, min(bx + bw, sx + vw) - max(bx, sx))
+                inter_y = max(0.0, min(by + bh, sy + vh) - max(by, sy))
+                if inter_x <= 0 or inter_y <= 0:
+                    dropped += 1
+                    continue
+                # Require at least 40% of the element to be visible so
+                # half-cut elements at the edges don't produce clipped boxes.
+                if bw * bh > 0 and (inter_x * inter_y) / (bw * bh) < 0.40:
+                    dropped += 1
+                    continue
+                # Translate document coords → viewport (screenshot) coords,
+                # clamped to the image bounds.
+                nx = max(0.0, bx - sx)
+                ny = max(0.0, by - sy)
+                nw = min(bw, vw - nx)
+                nh = min(bh, vh - ny)
+                bbox = BBox(x=nx, y=ny, width=nw, height=nh)
+            else:
+                bbox = BBox(x=bx, y=by, width=bw, height=bh)
+
+            screen.elements.append(Element(
+                id=el_dict.get("id", ""),
+                element_class=el_dict.get("element_class", "interactive"),
+                tag=el_dict.get("tag", "input"),
+                type=el_dict.get("type"),
+                role=el_dict.get("role"),
+                name=el_dict.get("name"),
+                accessible_name=el_dict.get("accessible_name"),
+                required=bool(el_dict.get("required", False)),
+                placeholder=el_dict.get("placeholder"),
+                pattern=el_dict.get("pattern"),
+                max_length=el_dict.get("max_length"),
+                bounding_box=bbox,
+                ancestor_section=el_dict.get("ancestor_section"),
+                form_id=el_dict.get("form_id"),
+                is_fixed=bool(el_dict.get("is_fixed", False)),
+            ))
+            kept += 1
 
         self.session.screens.append(screen)
 
@@ -517,34 +587,44 @@ class CaptureSession:
             self._state["screen_index"] += 1
 
         interactive_count = sum(1 for e in screen.elements if e.element_class == "interactive")
-        logger.info(
-            f"Screen {idx} captured: {interactive_count} interactive elements, "
-            f"{len(screen.figures)} figure(s)."
-        )
+        if viewport_space:
+            logger.info(
+                f"Screen {idx} captured (visible area only): {kept} elements kept, "
+                f"{dropped} off-screen elements excluded, "
+                f"{interactive_count} interactive, {len(screen.figures)} figure(s)."
+            )
+        else:
+            logger.info(
+                f"Screen {idx} captured (full page): {interactive_count} interactive "
+                f"elements, {len(screen.figures)} figure(s)."
+            )
 
-    def _scroll_capture(self, page: Page, base: str, fig_offset: int) -> list[Figure]:
+    def _scroll_capture(
+        self, page: Page, base: str, fig_offset: int, vp_box: dict
+    ) -> list[Figure]:
         """
-        Capture scroll segments for a viewport-mode capture.
-
-        If the page height > 1.6× viewport height, auto-captures scrolled
-        segments with 10% overlap.  Deduplicates segments whose image
-        content hash matches (catches sticky headers repeating).
-        Returns additional Figure objects.
+        OPTIONAL scroll segmentation (config: capture.scroll_capture).
+        Starts from the writer's CURRENT position and captures downward.
+        Restores the original scroll position when done.
+        NOTE: elements for segments are not extracted; segments are
+        illustration-only "(continued)" figures.
         """
         try:
-            viewport_h = page.evaluate("window.innerHeight")
+            viewport_h = int(vp_box.get("height") or page.evaluate("window.innerHeight"))
+            start_y = int(vp_box.get("y", 0))
             page_h = page.evaluate("document.body.scrollHeight")
         except Exception:
             return []
 
-        if page_h <= viewport_h * 1.6:
+        remaining = page_h - (start_y + viewport_h)
+        if remaining <= viewport_h * 0.6:
             return []
 
-        logger.debug(f"Scroll capture: page_h={page_h}, viewport_h={viewport_h}")
-        figures = []
+        logger.debug(f"Scroll capture: page_h={page_h}, viewport_h={viewport_h}, start_y={start_y}")
+        figures: list[Figure] = []
         overlap = int(viewport_h * 0.10)
         step = viewport_h - overlap
-        scroll_y = step   # first segment starts after the already-captured viewport
+        scroll_y = start_y + step
         seg_idx = 1
         seen_hashes: set[str] = set()
 
@@ -556,7 +636,6 @@ class CaptureSession:
                 seg_path = self.session_dir / seg_name
                 page.screenshot(path=str(seg_path), full_page=False)
 
-                # Deduplicate by image hash (catches sticky headers)
                 img_hash = hashlib.md5(seg_path.read_bytes()).hexdigest()[:12]
                 if img_hash not in seen_hashes:
                     seen_hashes.add(img_hash)
@@ -580,9 +659,9 @@ class CaptureSession:
             scroll_y += step
             seg_idx += 1
 
-        # Restore scroll position
+        # Restore the writer's original scroll position (not top!)
         try:
-            page.evaluate("window.scrollTo(0, 0)")
+            page.evaluate(f"window.scrollTo(0, {start_y})")
         except Exception:
             pass
 
@@ -616,4 +695,3 @@ def run_capture_session(
     model = session.run()
     model._session_dir = session.session_dir
     return model
-

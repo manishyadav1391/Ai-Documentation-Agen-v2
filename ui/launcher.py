@@ -257,6 +257,10 @@ class LauncherUI:
         self.session_listbox = tk.Listbox(assemble_frame, selectmode=tk.MULTIPLE, height=5, font=("Arial", 9))
         self.session_listbox.pack(fill=tk.BOTH, expand=True, pady=5)
         self.session_listbox.bind("<Double-1>", self._on_session_double_click)
+        self.session_listbox.bind("<<ListboxSelect>>", self._on_listbox_select)
+        
+        self.selected_session_indices = []
+
         
         self.refresh_sessions()
         
@@ -356,6 +360,7 @@ class LauncherUI:
 
     def refresh_sessions(self):
         self.session_listbox.delete(0, tk.END)
+        self.selected_session_indices = []
         sessions_dir = Path("sessions")
         if sessions_dir.exists():
             # List all subdirectories, ignoring hidden ones
@@ -392,6 +397,15 @@ class LauncherUI:
             except Exception:
                 pass
 
+    def _on_listbox_select(self, event):
+        current_selection = self.session_listbox.curselection()
+        # Remove items that are no longer selected
+        self.selected_session_indices = [idx for idx in self.selected_session_indices if idx in current_selection]
+        # Add newly selected items
+        for idx in current_selection:
+            if idx not in self.selected_session_indices:
+                self.selected_session_indices.append(idx)
+
     def _on_session_double_click(self, event):
         self._open_selected_review()
 
@@ -408,14 +422,13 @@ class LauncherUI:
         open_review_ui(session_dir, screen_index=1)
 
     def assemble_manual(self):
-        selected_indices = self.session_listbox.curselection()
-        if not selected_indices:
+        if not hasattr(self, 'selected_session_indices') or not self.selected_session_indices:
             messagebox.showwarning("Warning", "Please select at least one module (session) to assemble.")
             return
             
         sessions_dir = Path("sessions")
         ordered_sessions = []
-        for i in selected_indices:
+        for i in self.selected_session_indices:
             session_name = self.session_listbox.get(i)
             ordered_sessions.append(sessions_dir / session_name)
             
