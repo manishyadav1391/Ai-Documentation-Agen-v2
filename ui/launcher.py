@@ -25,20 +25,8 @@ from master_assembler import assemble_master_manual
 from config import get_config, save_config, reload_config
 from ui.style_editor import StyleEditorDialog
 from docbot.clients.profile import ClientProfile
+from manual_builder.manifest_loader import get_available_clients
 
-
-def get_available_clients_v3() -> list[str]:
-    """List all clients under clients/ or legacy content/ directories."""
-    config = get_config()
-    clients = set()
-    for d in [Path(config.clients_dir), Path(config.content_dir)]:
-        if d.exists():
-            for child in d.iterdir():
-                if child.is_dir() and child.name != "_default":
-                    # Client must have a manifest.yaml
-                    if (child / "manifest.yaml").exists():
-                        clients.add(child.name)
-    return sorted(list(clients))
 
 
 class StyleConfigDialog(tk.Toplevel):
@@ -197,7 +185,7 @@ class LauncherUI:
 
         tk.Label(client_frame, text="Select Client:").grid(row=0, column=0, sticky="w", pady=5)
         
-        self.client_list = get_available_clients_v3()
+        self.client_list = get_available_clients()
         self.client_var = tk.StringVar(value=self.client_key)
         self.client_combo = ttk.Combobox(client_frame, textvariable=self.client_var, values=self.client_list, state="readonly", width=18)
         self.client_combo.grid(row=0, column=1, sticky="w", padx=5, pady=5)
@@ -350,7 +338,7 @@ class LauncherUI:
                     yaml.safe_dump(manifest_data, f, sort_keys=False)
 
             # Reload client list
-            self.client_list = get_available_clients_v3()
+            self.client_list = get_available_clients()
             self.client_combo.config(values=self.client_list)
             self.client_var.set(new_key)
             self.on_client_change(None)

@@ -1,478 +1,260 @@
-# Documentation Automation Bot — Extensive Project README
+# README.md — DocBot v3
 
-## 1) What this project does (high-level)
-This repository automates the creation of user manuals (in **.docx**) from recorded UI workflows.
-
-The workflow is:
-1. **Capture**: Open a browser and capture each UI “screen” the user navigates through. For every screen, the bot saves:
-   - a full-page screenshot (`screen_N.png`)
-   - an extracted DOM-element inventory (`screen_N_elements.json`)
-   - extracted page context (`screen_N_meta.json`)
-2. **Detect regions**: Heuristically group DOM elements into **semantic regions** (headers, navigation bars, filter forms, table headers, action buttons, section headings, etc.).
-3. **LLM labeling**: Use an LLM provider to assign meaningful **labels** to those semantic regions and suggest a **screen name/title**.
-4. **Human review (UI)**: A Tkinter window shows the screenshot and labeled regions. You can edit region bounding boxes/labels and provide the final **screen name**.
-5. **Render annotations**: Generate an annotated screenshot (`screen_N_annotated.png`) by drawing region boxes + callouts.
-6. **Generate content**: Use the LLM to produce:
-   - **field descriptions** for form fields
-   - **procedure prose** (step-by-step instructions) for the screen workflow
-7. **Assemble docx**:
-   - assemble a per-session module draft (`module_draft.docx`)
-   - optionally assemble all modules into a **final client manual** (`Final_Client_Manual.docx`) 
-
-You can run the full experience through the Tkinter **Launcher UI**.
+> **Documentation Automation System for Professional User Manuals**
 
 ---
 
-## 2) Key files and responsibilities (quick map)
+## What Is DocBot?
 
-### Entry points
-- **`main.py`**: Runs the core capture → detect → label → review → render → generate content → assemble module pipeline for the latest session.
-- **`ui/launcher.py`**: Provides the interactive launcher UI:
-  - start recording a new module
-  - assemble the master manual from multiple recorded sessions
-- **`review_ui.py`**: The Tkinter editor for region labels and bounding boxes, with navigation controls (prev/next/quit).
+DocBot v3 is a **Python desktop application** that automates the production of professional user-manual Word documents (`.docx`). A documentation writer navigates a target web application in a browser, triggers screen captures with a single mouse gesture, and DocBot handles the rest:
 
-### Capture + region detection
-- **`capture.py`**: Browser automation + DOM extraction + screenshot capture.
-- **`detect_regions.py`**: Heuristic region grouping from `screen_N_elements.json`.
+- **Captures** screenshots and extracts DOM structure from the browser
+- **Detects** semantic regions (forms, tables, navigation bars, buttons)
+- **Compiles** user action steps from recorded browser events
+- **Generates** screen names, purpose statements, field descriptions, and procedure steps using a configured LLM
+- **Annotates** screenshots with numbered callout bubbles
+- **Assembles** a fully-branded, numbered, QA-validated `.docx` manual
 
-### LLM orchestration + content generation
-- **`labeler.py`**: Orchestrates provider calls to label regions and generate screen content.
-- **`providers/base.py`**: Provider abstraction (common methods for labeling, field descriptions, procedure prose).
-- **`providers/browser.py`**: “Copy-paste” provider (writes prompts to disk; user pastes LLM output back into a file).
-- **`providers/anthropic_api.py`**: Native Anthropic API provider.
-- **`providers/openai_compat.py`**: OpenAI-compatible provider (Groq/Together/etc.).
-- **`providers/ollama.py`**: Ollama local/remote provider.
-- **`llm_ui.py`**: Tkinter tool to run a prompt through the selected provider (or copy-paste prompt in browser mode).
-
-### Rendering + docx assembly
-- **`annotate.py`**: Draws callouts and region boxes on screenshots → `screen_N_annotated.png`.
-- **`assemble.py`**: Builds a single-session module draft (`module_draft.docx`).
-- **`master_assembler.py`**: Combines multiple modules into `Final_Client_Manual.docx`.
-- **`templates/`**:
-  - **`templates/base.py`**: shared DocumentBuilder utilities (Word headers/footers, borders, TOC field, etc.)
-  - **`templates/corporate/builder.py`**: Corporate-styled docx layout.
-
-### Configuration
-- **`config.py`**: Loads `config.yaml` + environment variables for API keys.
-- **`config.yaml`**: Default configuration (provider choice, model names, render styling, brand theme).
+All document styling, client branding, and writing voice are driven by YAML configuration — no code changes are needed to onboard a new client.
 
 ---
 
-## 3) End-to-end workflow (the actual runtime flow)
-
-### 3.1 Launching
-Run the launcher UI:
-- It lets you **configure brand styling** and **start a new recording**.
-
-Under the hood:
-- `ui/launcher.py` imports `run_pipeline` from `main.py`.
-
-### 3.2 Capture phase (`main.py` → `capture.py`)
-`main.py` loads configuration and constructs the selected provider.
-Then it calls:
-- `capture.run_capture_session()`
-
-#### Capture controls
-When Playwright opens Chromium:
-- **Single middle-click**: capture current screen
-- **Double middle-click**: quit capture session and start processing
-
-#### What `capture.py` saves per screen
-For `screen_index = 1, 2, ...`:
-- `screen_{i}.png`: full-page screenshot (`page.screenshot(full_page=True)`)
-- `screen_{i}_elements.json`: extracted DOM elements via injected JS
-- `screen_{i}_meta.json`: page metadata (title, H1, breadcrumb, active tab, URL)
-
-The DOM inventory includes:
-- interactive controls (buttons/inputs/selects/etc.) with bounding boxes
-- navigation links
-- headings/labels
-- table column headers
-
-### 3.3 Region detection (`main.py` → `detect_regions.py`)
-For each captured screen:
-- `process_screen_regions(latest_session, screen_index)`
-
-This reads:
-- `screen_{i}_elements.json`
-
-And produces:
-- `screen_{i}_regions.json`
-
-Regions are created using heuristics such as:
-- `detect_page_header`
-- `detect_navigation_bar`
-- `detect_filter_regions`
-- `detect_table_headers`
-- `detect_action_columns`
-- `detect_standalone_actions`
-- `detect_section_labels`
-
-If heuristics find nothing, it falls back to an **element-level region** strategy.
-
-### 3.4 Region labeling + screen title suggestion (`main.py` → `labeler.py`)
-For each screen:
-- `Labeler.label_screen_regions(session_dir, screen_index)`
-
-This reads:
-- `screen_{i}_regions.json`
-
-Creates provider input objects and calls:
-- `provider.label_regions_with_title(...)`
-
-Results:
-- `screen_{i}_labeled.json`: regions with a `label` per region
-- (optional) `screen_{i}_meta.json.screen_name`: suggested by LLM when missing
-
-### 3.5 Human review editor (`main.py` → `review_ui.py`)
-`open_review_ui(session_dir, screen_index, total_screens=N)` opens the Tkinter editor.
-
-The editor:
-- shows the screenshot `screen_{i}.png`
-- shows detected regions with their current labels
-- lets the user:
-  - double-click a region to edit label/role + bbox coords
-  - delete a region
-  - add a new region
-  - fine-tune bbox via nudge/resize buttons
-  - enter the final **Screen Name** in the top bar
-
-Navigation buttons:
-- Previous, Next, Quit Session
-
-When you press Next/Prev/Quit, the editor saves:
-- `screen_{i}_final.json`: filtered region list (deleted removed)
-- updates `screen_{i}_meta.json.screen_name` with your entered Screen Name
-
-### 3.6 Rendering annotations (`main.py` → `annotate.py`)
-After review for each screen:
-- `render_annotations(session_dir, screen_index)`
-
-This reads:
-- `screen_{i}_final.json`
-- `screen_{i}.png`
-
-Then draws:
-- region bounding boxes (stroke color depends on role)
-- callout bubbles + leader lines (overlap-aware placement)
-
-It writes:
-- `screen_{i}_annotated.png`
-
-### 3.7 Content generation (`labeler.generate_screen_content`)
-When moving forward in the multi-screen loop:
-- `Labeler.generate_screen_content(session_dir, screen_index)`
-
-This produces `screen_{i}_content.json` containing:
-- `field_descriptions`: a list of `{field_name, description}`
-- `procedure_prose`: rendered narrative with structured markers
-- `screen_name`, `page_title`
-
-#### Field description generation
-It builds a field list from DOM elements:
-- interactive inputs (input/select/textarea)
-- skips password fields and `[REDACTED]` values
-- determines which region bbox contains each field (center point containment test)
-
-Then it calls provider:
-- `provider.describe_fields(...)`
-
-#### Procedure prose generation
-It converts region list into a simplified **action sequence**.
-Then it calls:
-- `provider.procedure_prose(...)`
-
-### 3.8 Docx assembly
-
-#### Per-session module draft (`assemble.py`)
-After all screens are processed:
-- `assemble_module(latest_session)`
-
-It uses the configured template:
-- `templates/corporate/builder.py` (default)
-
-And writes:
-- `sessions/session_*/module_draft.docx`
-
-For each screen, it injects:
-- annotated screenshot
-- procedure prose
-- interface element dictionary table
-
-#### Master client manual (`master_assembler.py`)
-From the launcher UI:
-- select multiple session folders
-- click assemble
-
-Then:
-- `assemble_master_manual(ordered_session_dirs, Final_Client_Manual.docx)`
-
-It adds global cover, revision history, TOC placeholder, then:
-- inserts module divider pages
-- injects each screen section into the master document using a **global screen counter**
-
----
-
-## 4) How configuration works
-
-### `config.yaml`
-Example keys:
-- `provider`: `browser | anthropic | openai_compat | ollama`
-- `default_template`: currently `corporate`
-- `sessions_dir`: default `sessions`
-- `providers.*`: model names and API key environment variable names
-- `render.*`: label font size and stroke widths for annotation rendering
-- `theme.*`: Word doc styling + logo path + brand colors
-
-### `config.py`
-- `load_config()` loads and validates `config.yaml`
-- it also loads `.env` if present (via `python-dotenv`)
-- `Config.get_api_key(provider_name)` resolves the API key from environment variables
-
-Important behavior:
-- in browser mode, no API keys are needed.
-- in API modes, provider must have the relevant env var set.
-
----
-
-## 5) Provider behavior details
-
-### 5.1 `providers/base.py`
-Defines the provider interface.
-Common methods:
-- `label_regions_with_title` → labels regions + suggests screen title
-- `describe_fields` → returns descriptions for field list
-- `procedure_prose` → creates procedure prose from action sequence
-
-It also defines how prompt templates are loaded:
-- `load_prompt(template_name)` loads `providers/prompts/{template_name}.txt`
-- prompt templates are parameterized using `{placeholder}` replacement
-
-### 5.2 `providers/browser.py` (copy/paste)
-Workflow:
-1. Write prompt to a prompt file.
-2. Open configured editor (default `notepad`).
-3. Wait for user to save/paste LLM response into a response file.
-4. Parse JSON (supports raw JSON or fenced JSON-like content).
-
-This provider is ideal for reliability when API keys are unavailable.
-
-### 5.3 `providers/anthropic_api.py`
-- Uses Anthropic native endpoint: `POST https://api.anthropic.com/v1/messages`
-- Sends user content as a single message.
-- Extracts `data["content"][0]["text"]`.
-
-### 5.4 `providers/openai_compat.py`
-- Generic OpenAI-like endpoint: `/chat/completions`
-- Uses httpx with a base URL configured in `config.yaml`
-
-### 5.5 `providers/ollama.py`
-- Uses the `ollama` Python package
-- Streams response chunks and concatenates them
-
----
-
-## 6) UI components
-
-### 6.1 `ui/launcher.py`
-Main launcher window:
-- Configure Brand: opens `StyleConfigDialog`
-- Record New Module: calls `run_pipeline()`
-- Assemble Client Manual: collects selected sessions and calls `assemble_master_manual()`
-
-### 6.2 `review_ui.py`
-Tkinter review editor with:
-- left region list (role + label)
-- nudge/resize tools
-- right canvas with zoom/pan
-- editing dialog for label/role/bbox
-
-When leaving each screen, it saves:
-- `screen_{i}_final.json`
-- updates `screen_{i}_meta.json.screen_name`
-
----
-
-## 7) How annotated screenshots are generated (`annotate.py`)
-
-`render_annotations()`:
-1. Loads screenshot (`screen_i.png`).
-2. Loads final regions (`screen_i_final.json`).
-3. For each region:
-   - draw rectangle outline with role-dependent stroke color
-   - create callout bubble with label text wrapped to limited line width
-   - place callout bubble using overlap-aware candidate anchors
-   - draw curved bezier leader line
-4. Alpha composites overlay on the original image
-5. Saves `screen_i_annotated.png`
-
----
-
-## 8) Docx generation (`templates/`)
-
-### 8.1 `templates/base.py`
-Shared Word document utilities:
-- margins & header/footer setup
-- table borders & cell background shading
-- TOC field insertion
-- callout rendering helper
-
-### 8.2 `templates/corporate/builder.py`
-Provides the corporate manual styling:
-- cover page with accent bar + optional logo
-- revision history table
-- module divider pages
-- per-screen sections:
-  - Heading: `"{index}. {screen_name}"`
-  - annotated figure + caption
-  - procedure section rendered from structured markers
-  - interface dictionary table
-
-The procedure prose renderer expects markers like:
-- `PURPOSE:`
-- `PREREQUISITES:`
-- `STEPS:`
-- `EXPECTED OUTCOME:`
-- `NOTES:`
-
-These are used to structure headings and lists/bullets in the docx.
-
----
-
-## 9) Setup / Installation (full)
+## Quick Start
 
 ### Prerequisites
-- Python 3.10+ (recommended)
-- Microsoft Word (to view resulting `.docx` files). Not required to generate, but recommended.
-- Windows browser environment supported by Playwright (Chromium).
 
-### Install dependencies
-1. Create/activate a virtual environment (recommended).
-2. Install requirements:
-   ```bash
-   pip install -r requirements.txt
-   ```
+- Python 3.10+
+- Windows (Tkinter UI is desktop-native; Playwright supports all platforms)
+- A configured LLM provider (Anthropic, Groq, Ollama, or use browser copy-paste mode)
 
-3. Install Playwright browsers (needed by Playwright capture):
-   ```bash
-   playwright install
-   ```
+### Installation
 
-### Configure `config.yaml`
-Edit `config.yaml`:
-- Set `provider` to `browser` or one of:
-  - `anthropic`
-  - `openai_compat`
-  - `ollama`
-
-If using API providers, set environment variables (or create an `.env` file):
-- `ANTHROPIC_API_KEY` for Anthropic
-- `OPENAI_API_KEY` for openai-compatible providers
-- `OLLAMA_API_KEY` for Ollama (optional depending on your endpoint)
-
-### Brand styling
-- Use Launcher UI → **Configure Brand...**
-- Save settings updates `config.yaml`
-
----
-
-## 10) Running the project
-
-### Option A: Launch the GUI
-Run `ui/launcher.py` (from your Python environment):
-- Use the launcher to:
-  - record a new module
-  - assemble the final master manual
-
-### Option B: Run pipeline directly
-Run `main.py`:
-- captures latest session
-- processes it end-to-end
-- assembles module draft docx
-
-Example:
 ```bash
-python main.py
+# 1. Clone the repository
+git clone <repo-url>
+cd doc_automation_v2
+
+# 2. Create and activate a virtual environment
+python -m venv venv
+venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Install Playwright browsers
+playwright install chromium
+
+# 5. Copy and configure environment variables
+copy .env.example .env
+# Edit .env and add your API key(s)
+```
+
+### Configuration
+
+Edit `config.yaml` to set:
+
+```yaml
+provider: anthropic          # or: openai_compat, ollama, browser
+current_client: ncd          # client folder name under clients/
+```
+
+### Run the Application
+
+```bash
+python ui/launcher.py
 ```
 
 ---
 
-## 11) Output artifacts (where to find files)
+## How to Use
 
-Sessions are stored under:
-- `sessions/session_YYYYMMDD_HHMMSS/`
+### Step 1: Launch the Control Panel
 
-Per screen `N` you will typically find:
-- `screen_N.png`
-- `screen_N_elements.json`
-- `screen_N_meta.json`
-- `screen_N_regions.json`
-- `screen_N_labeled.json`
-- `screen_N_final.json`
-- `screen_N_annotated.png`
-- `screen_N_content.json`
+```bash
+python ui/launcher.py
+```
 
-Per session:
-- `module_draft.docx`
+The Launcher window opens. Select:
+- **Client** — the project/client to document (dropdown)
+- **Provider** — the LLM backend to use
+- **Start URL** — the URL of the application to document
+- **Module Name / Number** — the section name for this recording
 
-Master assembly output:
-- `Final_Manuals/Final_Client_Manual.docx`
+### Step 2: Record a Module
 
----
+Click **Start Recording**. A headed Chromium browser opens and navigates to the Start URL.
 
-## 12) Troubleshooting
+| Gesture | Action |
+|---|---|
+| **Middle-click** | Capture the current screen |
+| **Double middle-click** | End the session and proceed to AI generation |
 
-### Playwright browser won’t open
-- Ensure Playwright is installed and browsers are installed:
-  - `playwright install`
+Navigate the application, capture each screen you want documented, then double middle-click to finish.
 
-### LLM parsing errors
-- Providers expect JSON arrays for labels/field descriptions.
-- If your model returns invalid JSON, you may need to:
-  - fix the pasted content in browser mode
-  - adjust prompts in the prompt templates under `providers/prompts/`
+### Step 3: AI Generation
 
-### Annotation callouts overlap regions
-- `annotate.py` has an overlap-aware placement algorithm.
-- If labels are too large, consider:
-  - adjusting `render.label_font_size`
-  - adjusting wrap length by editing `_wrap_text` (in annotate.py)
+DocBot automatically:
+1. Detects semantic regions in each captured screen
+2. Compiles user actions into steps
+3. Calls the LLM once per screen to generate documentation content
+4. Saves results to `sessions/<session_dir>/session.json`
 
----
+A progress window shows generation status.
 
-## 13) Extending the project
+### Step 4: Review & Edit
 
-### Add a new document template
-Implement a new template builder:
-- create a class similar to `CorporateBuilder` that extends `DocumentBuilder`
-- update `assemble.py` / `master_assembler.py` if you want to select it by config
+The **Review UI** opens automatically after generation. Here you can:
+- Edit screen names, purpose text, field descriptions, and steps
+- Drag callout bubbles to better positions
+- Resize/move annotation boxes
+- Regenerate individual screens
 
-### Add a new LLM provider
-Implement a new provider class that extends `Provider`:
-- required methods: implement a transport to return `_chat(prompt)`
-- wire into `main.py`’s `get_provider_instance` and any UI provider mapping
+Close the Review UI when satisfied.
 
----
+### Step 5: Assemble the Module
 
-## 14) References to prompt templates
-LLM prompt templates are in:
-- `providers/prompts/describe_fields.txt`
-- `providers/prompts/label_regions.txt`
-- `providers/prompts/procedure_prose.txt`
+DocBot automatically assembles a single-module preview document saved to:
 
-These templates are loaded and filled by the provider base layer.
+```
+Final_Manuals/<CLIENT>_<SYSTEM>_User_Manual_v<version>_<timestamp>.docx
+```
+
+### Step 6: Assemble the Master Manual
+
+After recording all modules, return to the Launcher and use the **Assemble Master** section:
+1. Select the sessions you want to include (in order)
+2. Click **Assemble Master Manual**
+
+The full client manual (cover, revision history, TOC, all modules) is saved to `Final_Manuals/`.
 
 ---
 
-## Appendix A: Current dependencies (`requirements.txt`)
-From repository:
-- playwright
-- python-docx
-- pyautogui
-- loguru
-- rich
-- ollama
+## Project Structure
 
-(Other indirect dependencies come from transitive requirements.)
+```
+doc_automation_v2/
+├── ui/launcher.py              # Application entry point (run this)
+├── main.py                     # Pipeline orchestration
+├── config.yaml                 # Runtime configuration
+├── .env                        # API keys (never commit)
+├── requirements.txt            # Python dependencies
+├── docbot/                     # Core library
+│   ├── models.py               # Data models (SessionModel, Screen, Region…)
+│   ├── recorder/capture.py     # Playwright browser capture
+│   ├── processing/             # Region detection, step compilation, AI generation, annotation
+│   └── export/qa.py            # Quality assurance
+├── manual_builder/             # Word document builder
+│   ├── generic_builder.py      # Main builder class
+│   └── renderers/              # Per-section renderers
+├── providers/                  # LLM provider adapters
+├── clients/                    # Per-client configuration (YAML)
+│   ├── _default/               # Default/fallback configuration
+│   └── <client_key>/           # Client-specific configuration
+├── prompts/v3/                 # LLM prompt templates
+├── sessions/                   # Captured session data (runtime)
+└── Final_Manuals/              # Generated Word documents (output)
+```
 
+---
+
+## Client Configuration
+
+Each client is configured via four YAML files in `clients/<client_key>/`:
+
+| File | Purpose |
+|---|---|
+| `manifest.yaml` | Client name, system name, document version, sections |
+| `style.yaml` | Fonts, colors, page margins, annotation style |
+| `voice.yaml` | LLM tone rules, example sentences, writing templates |
+| `glossary.yaml` | Domain-specific terminology |
+
+To add a new client:
+1. `mkdir clients/<new_client_key>`
+2. Copy files from `clients/_default/` as a starting point
+3. Edit the four YAML files
+4. Set `current_client: <new_client_key>` in `config.yaml`
+
+---
+
+## LLM Providers
+
+| Provider | Config Value | Requirements |
+|---|---|---|
+| Anthropic Claude | `provider: anthropic` | `ANTHROPIC_API_KEY` in `.env` |
+| OpenAI-compatible (Groq, Together AI) | `provider: openai_compat` | `OPENAI_API_KEY` in `.env` |
+| Ollama (local/cloud) | `provider: ollama` | `OLLAMA_API_KEY` in `.env` (cloud only) |
+| Browser copy-paste | `provider: browser` | None — manual interaction |
+
+The **browser** provider opens a Notepad window with the formatted prompt. Paste the response back to continue. No API key required — useful for testing or API-rate-limited situations.
+
+---
+
+## Environment Variables
+
+Create a `.env` file in the project root (copy from `.env.example`):
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=gsk_...
+OLLAMA_API_KEY=...
+```
+
+> [!CAUTION]
+> Never commit `.env` to version control. The `.gitignore` should exclude it.
+
+---
+
+## Running Tests
+
+```bash
+pytest tests/ -v
+```
+
+Test coverage includes:
+- Region detection (IoU merge, parenthesis operator precedence)
+- Step compilation (input grouping, click+navigate, change events)
+- Figure/table numbering (continuous and module-prefixed modes)
+- Provider `chat_json()` fence stripping and retry logic
+
+---
+
+## Troubleshooting
+
+### Browser does not open
+
+Ensure Playwright Chromium is installed:
+```bash
+playwright install chromium
+```
+
+### AI generation produces empty or placeholder content
+
+1. Verify your API key is set correctly in `.env`.
+2. Check `sessions/<dir>/run.log` for LLM error messages.
+3. Try `provider: browser` to test with manual copy-paste.
+
+### Word document won't open in Microsoft Word
+
+The OOXML validation check should catch this. Check `sessions/<dir>/run.log` for `[QA T5.6]` messages. If OOXML violations are reported, open an issue with the log details.
+
+### Font not found / poor annotation quality
+
+DocBot probes Windows font paths. On non-Windows systems, callout text may use a bitmap fallback font. This does not affect document content, only annotation aesthetics.
+
+### LibreOffice PDF not generated
+
+Install [LibreOffice](https://www.libreoffice.org/) and ensure `soffice` is in your PATH. PDF generation is optional — the `.docx` output is always produced regardless.
+
+---
+
+## Security Notes
+
+- API keys are loaded from environment variables at runtime and are never stored in session data or logs.
+- Playwright saves browser authentication state (cookies) to `sessions/state/<client>.json`. Treat this file as sensitive — it can authenticate to the documented application.
+- If you have access to the git history, check for any previously committed API keys and rotate them immediately.
+
+---
+
+## License
+
+See [LICENSE](LICENSE) in the repository root.

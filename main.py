@@ -18,11 +18,10 @@ from docbot.logging_setup import setup_logging, attach_session_log
 setup_logging()
 
 from config import load_config
-from capture import run_capture_session
-from detect_regions import process_screen_regions
-from labeler import Labeler
-from review_ui import open_review_ui
-from annotate import render_annotations
+from docbot.recorder.capture import run_capture_session
+from docbot.processing.generator import Generator
+from ui.review import open_review_ui
+from docbot.processing.annotate import render_annotations
 from assemble import assemble_module
 
 
@@ -58,7 +57,6 @@ def run_pipeline(client_key: str = None, start_url: str = None, module_name: str
         logger.info(f"[Config Override] Active Client set to: {client_key}")
 
     provider = get_provider_instance(config)
-    bot_labeler = Labeler(provider)
 
     # 1. Capture Phase
     logger.info("--- PHASE 1: Capture Session ---")
@@ -118,7 +116,6 @@ def run_pipeline(client_key: str = None, start_url: str = None, module_name: str
     SessionStore.save(session, latest_session)
 
     # 2. AI Pre-generation Pass (Vision-first single-call documentation)
-    from docbot.processing.generator import Generator
     from docbot.clients.profile import ClientProfile
 
     profile = ClientProfile.load(config.current_client)
@@ -261,7 +258,15 @@ def run_pipeline(client_key: str = None, start_url: str = None, module_name: str
             logger.warning(f"Could not load manifest for module name: {e}")
             _module_name = _module_name or config.current_client
 
-    bot_labeler.generate_module_intro(latest_session, _module_name, _module_number or 1)
+    # Generate module intro directly via Generator (no shim)
+    _session_for_intro = SessionStore.load(latest_session)
+    _session_for_intro.module_name = _module_name or _session_for_intro.module_name
+    _session_for_intro.module_number = _module_number or _session_for_intro.module_number or 1
+    try:
+        generator.generate_module_intro(_session_for_intro, client_profile=profile.data)
+        SessionStore.save(_session_for_intro, latest_session)
+    except Exception as e:
+        logger.warning(f"Module intro generation failed: {e}")
 
     # 5. Assembly Phase
     logger.info("--- PHASE 3: Module Assembly ---")

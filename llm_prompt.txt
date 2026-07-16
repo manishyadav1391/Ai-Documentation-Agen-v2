@@ -1,5 +1,0 @@
-Here are the current steps:
-[]
-
-Modify and polish these steps using this instruction: Make steps clean.
-Return ONLY a JSON array of strings containing the step texts. No other text.
