@@ -1,0 +1,47 @@
+client_key: oo
+client_display_name: OO
+system_name: '[System Name]'
+system_acronym: '[ACRONYM]'
+role_name: '[Role Name]'
+manual_title: User Manual
+version: '1.0'
+numbering_mode: module_prefixed
+sections:
+- id: cover
+  type: cover
+  source: cover.yaml
+- id: revision_history
+  type: revision_history
+  source: revision_history.yaml
+- id: toc
+  type: table_of_contents
+- id: table_of_tables
+  type: table_of_tables
+- id: table_of_figures
+  type: table_of_figures
+- id: about_client
+  type: prose
+  heading: About [Client]
+  source: about_client.md
+- id: introduction
+  type: prose
+  heading: Introduction to [System]
+  source: introduction_to_system.md
+- id: purpose
+  type: prose
+  heading: Purpose
+  source: purpose.md
+- id: key_features
+  type: bullet_list
+  heading: Key Features
+  source: key_features.yaml
+- id: getting_started
+  type: prose
+  heading: Getting Started
+  source: getting_started.md
+- id: modules
+  type: modules
+document_version: '1.0'
+prepared_by: ''
+reviewed_by: ''
+approved_by: ''

@@ -21,7 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from loguru import logger
 from pydantic import BaseModel
@@ -102,6 +102,7 @@ class Generator:
         session: "SessionModel",
         screen: "Screen",
         client_profile: dict | None = None,
+        progress_callback: Callable[[str], None] | None = None,
     ) -> ScreenDocResponse:
         """
         Generate documentation for a single screen.
@@ -110,10 +111,14 @@ class Generator:
             session:        The full session model (provides module context).
             screen:         The screen to document.
             client_profile: Optional dict with voice, glossary, field_style keys.
+            progress_callback: Optional callback for reporting status updates.
 
         Returns:
             ``ScreenDocResponse`` validated pydantic model.
         """
+        if progress_callback:
+            progress_callback(f"Preparing prompt context for Screen {screen.index}…")
+
         profile = client_profile or {}
         voice_examples = _format_voice_examples(profile.get("voice", {}))
         glossary_terms = _format_glossary(profile.get("glossary", {}))
@@ -198,6 +203,8 @@ class Generator:
             # Return the cached content re-parsed into the response schema
             return _content_to_response(screen.content)
 
+        if progress_callback:
+            progress_callback(f"Screen {screen.index}: calling LLM ({self.provider.name})…")
         logger.info(f"[Generator] Screen {screen.index}: calling LLM ({self.provider.name})…")
 
         # Log the full prompt to the session LLM log

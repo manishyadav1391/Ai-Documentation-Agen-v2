@@ -17,12 +17,13 @@ import yaml
 
 # Attempt to load .env if present (silently ignore if missing)
 _env_loaded = False
+from docbot import paths
 
 
 def _ensure_env() -> None:
     global _env_loaded
     if not _env_loaded:
-        dotenv_path = Path(".env")
+        dotenv_path = paths.data_dir() / ".env"
         if dotenv_path.exists():
             load_dotenv(dotenv_path, override=False)
             logger.debug(f"Loaded .env from {dotenv_path.resolve()}")
@@ -111,6 +112,7 @@ class Config(BaseModel):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     render: RenderConfig = Field(default_factory=RenderConfig)
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
+    first_run_done: bool = False
 
     def get_current_client(self) -> str:
         """Return the active client identifier."""
@@ -118,14 +120,14 @@ class Config(BaseModel):
 
     def validate_client_exists(self, client_key: str) -> bool:
         """Validate if the client's manifest exists (new clients/ layout first, legacy content/ fallback)."""
-        new_path = Path(self.clients_dir) / client_key / "manifest.yaml"
-        legacy_path = Path(self.content_dir) / client_key / "manifest.yaml"
+        new_path = paths.clients_dir() / client_key / "manifest.yaml"
+        legacy_path = paths.content_dir() / client_key / "manifest.yaml"
         return new_path.exists() or legacy_path.exists()
 
     @property
     def sessions_path(self) -> Path:
         """Absolute Path to the session output folder."""
-        return Path(self.sessions_dir).resolve()
+        return paths.sessions_dir()
 
     def get_active_provider_config(self) -> BaseModel:
         """Return the config block for the currently selected provider."""
@@ -158,8 +160,23 @@ class Config(BaseModel):
         }
         provider_cfg = mapping.get(p)
         env_name = getattr(provider_cfg, "api_key_env", None)
-        if env_name:
+        
+        # 1. Check environment variable
+        if env_name and os.environ.get(env_name):
             return os.environ.get(env_name)
+            
+        # 2. Check secrets.yaml in data_dir
+        secrets_path = paths.data_dir() / "secrets.yaml"
+        if secrets_path.exists():
+            try:
+                with secrets_path.open("r", encoding="utf-8") as f:
+                    secrets = yaml.safe_load(f) or {}
+                sec_key = f"{p}_api_key"
+                if sec_key in secrets and secrets[sec_key]:
+                    return secrets[sec_key]
+            except Exception as e:
+                logger.warning(f"Could not read secrets.yaml: {e}")
+                
         return None
 
 
@@ -170,7 +187,7 @@ class Config(BaseModel):
 _config_instance: Optional[Config] = None
 
 
-def load_config(config_path: Any = Path("config.yaml")) -> Config:
+def load_config(config_path: Any = None) -> Config:
     """
     Load and validate configuration from ``config.yaml``.
 
@@ -181,6 +198,8 @@ def load_config(config_path: Any = Path("config.yaml")) -> Config:
         A validated ``Config`` instance.
     """
     _ensure_env()
+    if config_path is None:
+        config_path = paths.config_path()
     config_path = Path(config_path)
     raw: Dict[str, Any] = {}
     if config_path.exists():
@@ -193,7 +212,7 @@ def load_config(config_path: Any = Path("config.yaml")) -> Config:
     return Config(**raw)
 
 
-def get_config(config_path: Any = Path("config.yaml")) -> Config:
+def get_config(config_path: Any = None) -> Config:
     """Return the cached global config, loading if necessary."""
     global _config_instance
     if _config_instance is None:
@@ -201,7 +220,7 @@ def get_config(config_path: Any = Path("config.yaml")) -> Config:
     return _config_instance
 
 
-def reload_config(config_path: Any = Path("config.yaml")) -> Config:
+def reload_config(config_path: Any = None) -> Config:
     """Reload config from disk; useful when the user edits settings at runtime."""
     global _config_instance
     _config_instance = load_config(config_path)
@@ -209,8 +228,10 @@ def reload_config(config_path: Any = Path("config.yaml")) -> Config:
     return _config_instance
 
 
-def save_config(config_obj: Config, config_path: Any = Path("config.yaml")) -> None:
+def save_config(config_obj: Config, config_path: Any = None) -> None:
     """Save the Config instance back to the config.yaml file."""
+    if config_path is None:
+        config_path = paths.config_path()
     config_path = Path(config_path)
     data = config_obj.model_dump()
     with config_path.open("w", encoding="utf-8") as f:

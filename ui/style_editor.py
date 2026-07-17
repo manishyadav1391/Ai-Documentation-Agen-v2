@@ -26,8 +26,9 @@ class StyleEditorDialog(tk.Toplevel):
         self.grab_set()
         
         # Load style config
-        self.styles_dir = Path("styles")
-        self.style_config = load_style(client_key, styles_dir=str(self.styles_dir))
+        from docbot import paths
+        self.styles_dir = paths.styles_dir()
+        self.style_config = load_style(client_key)
         
         self.build_ui()
 

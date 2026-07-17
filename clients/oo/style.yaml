@@ -1,0 +1,97 @@
+page:
+  size: A4
+  margin_top_cm: 2.54
+  margin_bottom_cm: 2.54
+  margin_left_cm: 2.54
+  margin_right_cm: 2.54
+fonts:
+  body_family: Segoe UI
+  body_size_pt: 10.5
+  heading_family: Segoe UI
+  code_family: Consolas
+colors:
+  primary: 1B365D
+  secondary: D97706
+  tertiary: C00000
+  accent: 3B82F6
+  table_header_bg: 1B365D
+  table_header_fg: FFFFFF
+  table_zebra: F8FAFC
+  body_text: '333333'
+  muted: '828282'
+headings:
+  h1_size_pt: 20
+  h1_bold: true
+  h1_color: primary
+  h1_before_pt: 18
+  h1_after_pt: 8
+  h2_size_pt: 16
+  h2_bold: true
+  h2_color: secondary
+  h3_size_pt: 13
+  h3_bold: true
+  h3_color: tertiary
+  h4_size_pt: 11
+  h4_bold: true
+  h4_color: secondary
+numbering:
+  section_format: '{n}'
+  subsection_format: '{parent}.{n}'
+  figure_prefix: Figure
+  figure_format: '{module}-{fig}'
+  table_prefix: Table
+  table_format: '{module}-{tbl}'
+figures:
+  max_width_cm: 16
+  caption_position: below
+  caption_style: italic
+  caption_size_pt: 10
+  border_enabled: true
+  border_color: CCCCCC
+  border_width_pt: 0.5
+tables:
+  header_bold: true
+  header_bg: table_header_bg
+  header_fg: table_header_fg
+  zebra_striping: true
+  zebra_color: table_zebra
+  border_color: CCCCCC
+  border_width_pt: 0.5
+  cell_padding_pt: 4
+  caption_position: below
+  caption_style: italic
+  caption_size_pt: 10
+bullets:
+  level_0_marker: •
+  level_1_marker: ◦
+  level_2_marker: ▪
+  indent_cm: 0.5
+cover:
+  layout: left_accent_bar
+  accent_bar_color: primary
+  accent_bar_width_cm: 1
+  title_size_pt: 32
+  title_color: primary
+  subtitle_size_pt: 18
+  subtitle_color: muted
+  version_position: bottom_right
+  illustration_max_width_cm: 10
+revision_history:
+  header_bg: table_header_bg
+  header_fg: table_header_fg
+  border_color: CCCCCC
+toc:
+  title: Table of Contents
+  max_depth: 3
+  dot_leaders: true
+logo:
+  path: ''
+  header_left: true
+  size_cm: 2
+footer:
+  show_page_numbers: true
+  page_number_format: Page {current} of {total}
+  page_number_color: muted
+  center_text: ''
+fields:
+  style: bullets

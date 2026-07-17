@@ -12,6 +12,7 @@ from pathlib import Path
 from loguru import logger
 
 
+from docbot import paths
 from docbot.logging_setup import setup_logging, attach_session_log
 
 # Initialise logging before anything else
@@ -45,13 +46,25 @@ def get_provider_instance(config):
         return BrowserProvider()
 
 
-def run_pipeline(client_key: str = None, start_url: str = None, module_name: str = None, module_number: int = None):
+def run_pipeline(
+    client_key: str = None,
+    start_url: str = None,
+    module_name: str = None,
+    module_number: int = None,
+    progress_callback: Callable[[str], None] | None = None,
+    cancel_event: Any = None,
+):
     """Executes the linear pipeline architecture with multi-screen traversal."""
-    logger.info("=" * 55)
-    logger.info("     Documentation Automation Bot — Pipeline Start     ")
-    logger.info("=" * 55)
+    def update_progress(msg: str):
+        logger.info(msg)
+        if progress_callback:
+            progress_callback(msg)
 
-    config = load_config("config.yaml")
+    update_progress("Starting pipeline...")
+    if cancel_event and cancel_event.is_set():
+        raise KeyboardInterrupt("Pipeline cancelled.")
+
+    config = load_config()
     if client_key:
         config.current_client = client_key
         logger.info(f"[Config Override] Active Client set to: {client_key}")
@@ -59,7 +72,7 @@ def run_pipeline(client_key: str = None, start_url: str = None, module_name: str
     provider = get_provider_instance(config)
 
     # 1. Capture Phase
-    logger.info("--- PHASE 1: Capture Session ---")
+    update_progress("--- PHASE 1: Capture Session ---")
     session_model = run_capture_session(
         start_url=start_url or "https://google.com",
         client_key=config.current_client,
@@ -67,21 +80,21 @@ def run_pipeline(client_key: str = None, start_url: str = None, module_name: str
         module_number=module_number
     )
 
+    if cancel_event and cancel_event.is_set():
+        raise KeyboardInterrupt("Pipeline cancelled.")
+
     # Locate the newly created session folder (Issue 2)
     latest_session = getattr(session_model, "_session_dir", None)
     if not latest_session:
-        # Fallback to search sessions directory for the most recently modified subdirectory
-        sessions_dir = Path(config.sessions_dir)
+        sessions_dir = paths.sessions_dir()
         sessions = sorted(sessions_dir.iterdir(), key=lambda p: p.stat().st_mtime)
-        # filter directories only, ignoring hidden/internal ones
         sessions = [s for s in sessions if s.is_dir() and not s.name.startswith(".")]
         if not sessions:
             logger.error("No sessions found to process.")
             return
         latest_session = sessions[-1]
 
-    logger.info(f"Processing session data in: {latest_session.name}")
-
+    update_progress(f"Processing session data in: {latest_session.name}")
 
     # Attach per-session log file
     attach_session_log(latest_session)
@@ -95,21 +108,23 @@ def run_pipeline(client_key: str = None, start_url: str = None, module_name: str
         logger.warning("No screens were captured. Exiting.")
         return
 
-    logger.info(f"--- PHASE 2: Processing {num_screens} Screens ---")
+    update_progress(f"--- PHASE 2: Processing {num_screens} Screens ---")
 
     # 1. Detect regions & compile steps deterministically for all screens
     from docbot.processing.regions import detect_regions
     from docbot.processing.steps import compile_steps
 
     for screen in session.screens:
+        if cancel_event and cancel_event.is_set():
+            raise KeyboardInterrupt("Pipeline cancelled.")
         # Detect regions if not already done
         if not screen.regions:
-            logger.info(f"Detecting regions for Screen {screen.index}…")
+            update_progress(f"Detecting regions for Screen {screen.index}…")
             screen.regions = detect_regions(screen.elements)
         
         # Compile steps from events if not already done
         if not screen.content.steps and screen.events:
-            logger.info(f"Compiling event steps for Screen {screen.index}…")
+            update_progress(f"Compiling event steps for Screen {screen.index}…")
             screen.content.steps = compile_steps(screen.events)
 
     # Save intermediate state
@@ -121,59 +136,39 @@ def run_pipeline(client_key: str = None, start_url: str = None, module_name: str
     profile = ClientProfile.load(config.current_client)
     generator = Generator(provider)
 
-    logger.info("--- Pre-generating Documentation (AI single-call) ---")
+    update_progress("--- Pre-generating Documentation (AI single-call) ---")
 
-    # Spawn a small loading progress window to let the user know the LLM is working (Issue 4)
-    import tkinter as tk
-    from tkinter import ttk
-
-    loading_win = None
-    pb = None
-    status_lbl = None
-    try:
-        loading_win = tk.Toplevel() if tk._default_root is not None else tk.Tk()
-        loading_win.title("DocBot AI — Generating Documentation")
-        loading_win.geometry("450x160")
-        loading_win.resizable(False, False)
-        # Force grab focus and raise topmost
-        loading_win.focus_force()
-        loading_win.attributes("-topmost", True)
-
-        lbl = tk.Label(loading_win, text="AI is generating screen documentation...", font=("Segoe UI", 11, "bold"))
-        lbl.pack(pady=15)
-
-        pb = ttk.Progressbar(loading_win, mode="determinate", length=350)
-        pb.pack(pady=5)
-
-        status_lbl = tk.Label(loading_win, text="Initializing LLM connection...", font=("Segoe UI", 9, "italic"))
-        status_lbl.pack(pady=5)
-        loading_win.update()
-    except Exception as e:
-        logger.debug(f"Could not spawn progress window: {e}")
-
+    num_success = 0
     for idx, screen in enumerate(session.screens):
-        if loading_win:
-            try:
-                pb["value"] = int((idx / num_screens) * 100)
-                status_lbl.config(text=f"Screen {screen.index} of {num_screens} (Calling {provider.name})...")
-                loading_win.update()
-            except Exception:
-                pass
-
+        if cancel_event and cancel_event.is_set():
+            raise KeyboardInterrupt("Pipeline cancelled.")
+        
         # Avoid overwriting already generated/edited screens unless forced
         if not screen.content.screen_name or not screen.content.purpose:
             try:
-                logger.info(f"Pre-generating Screen {screen.index} documentation…")
-                generator.generate_screen(session, screen, client_profile=profile.data)
+                update_progress(f"Screen {screen.index} of {num_screens}: pre-generating...")
+                generator.generate_screen(session, screen, client_profile=profile.data, progress_callback=progress_callback)
+                num_success += 1
             except Exception as e:
-                logger.warning(f"Failed to pre-generate Screen {screen.index}: {e}")
+                logger.error(f"Failed to pre-generate Screen {screen.index}: {e}")
+                err_msg = str(e)
+                if "generation failed" in err_msg.lower() or "validationerror" in err_msg.lower() or "json" in err_msg.lower():
+                    err_msg = "Could not parse or validate AI response."
+                if not screen.content.notes:
+                    screen.content.notes = []
+                screen.content.notes.append(f"GENERATION FAILED: {err_msg}")
+                screen.content.screen_name = screen.content.screen_name or f"Screen {screen.index} (Failed)"
+                screen.content.purpose = screen.content.purpose or "AI generation failed."
+        else:
+            num_success += 1
 
-    if loading_win:
-        try:
-            loading_win.destroy()
-        except Exception:
-            pass
+    if num_success < num_screens:
+        update_progress(f"{num_success} of {num_screens} screens generated; open Review UI to retry failed screens.")
+    else:
+        update_progress(f"All {num_screens} screens successfully generated.")
 
+    if cancel_event and cancel_event.is_set():
+        raise KeyboardInterrupt("Pipeline cancelled.")
 
     # Save generated state
     SessionStore.save(session, latest_session)
@@ -243,8 +238,14 @@ def run_pipeline(client_key: str = None, start_url: str = None, module_name: str
         content_path.write_text(json.dumps(legacy_content, indent=2, ensure_ascii=False), encoding="utf-8")
 
     # 3. Open the visual review UI
-    logger.info("Opening Review UI...")
-    open_review_ui(latest_session, screen_index=1)
+    update_progress("Opening Review UI...")
+    if progress_callback:
+        progress_callback(f"REQUEST_REVIEW_UI:{latest_session.resolve()}")
+    else:
+        open_review_ui(latest_session, screen_index=1)
+
+    if cancel_event and cancel_event.is_set():
+        raise KeyboardInterrupt("Pipeline cancelled.")
 
     # 4. Generate Module Introduction before Assembly
     from manual_builder import load_manifest
@@ -252,7 +253,7 @@ def run_pipeline(client_key: str = None, start_url: str = None, module_name: str
     _module_number = module_number
     if not _module_name or _module_number is None:
         try:
-            manifest = load_manifest(config.current_client, content_dir=config.content_dir)
+            manifest = load_manifest(config.current_client)
             _module_name = _module_name or manifest.system_name or manifest.client_display_name
         except Exception as e:
             logger.warning(f"Could not load manifest for module name: {e}")
@@ -268,12 +269,13 @@ def run_pipeline(client_key: str = None, start_url: str = None, module_name: str
     except Exception as e:
         logger.warning(f"Module intro generation failed: {e}")
 
+    if cancel_event and cancel_event.is_set():
+        raise KeyboardInterrupt("Pipeline cancelled.")
+
     # 5. Assembly Phase
-    logger.info("--- PHASE 3: Module Assembly ---")
+    update_progress("--- PHASE 3: Module Assembly ---")
     assemble_module(latest_session)
-    logger.info("=" * 55)
-    logger.info("       Module processing completed successfully!       ")
-    logger.info("=" * 55)
+    update_progress("Module processing completed successfully!")
 
 
 

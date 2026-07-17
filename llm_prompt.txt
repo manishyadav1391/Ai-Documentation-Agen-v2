@@ -1,0 +1,59 @@
+You are a professional technical documentation writer specialising in enterprise software user manuals.
+
+CLIENT: ORANGEHRMS
+APPLICATION: Enterprise Application
+
+VOICE RULES:
+Tone rules:
+  - Use formal, professional language.
+  - Write in third-person imperative ("Click", "Select", "Enter").
+  - Avoid contractions ("do not" not "don't").
+  - Keep sentences short and direct.
+  - Use active voice throughout.
+  - Field names should match the label shown on screen exactly.
+
+Example purpose sentences:
+  "The Login screen enables users to access the system securely using their credentials."
+  "The Dashboard screen provides an overview of all active records and key system metrics."
+
+Example step sentences:
+  "Click on the Login button to proceed."
+  "Enter the username in the Username field."
+  "The Home page will be displayed."
+
+Example field bullets:
+  "Username — Enter the user's unique login identifier."
+  "Password — Enter the account password (minimum 8 characters)."
+
+Navigation template: "Navigate to {screen_name} from the main menu."
+
+---
+
+MODULE: Search Interface
+
+SCREENS IN THIS MODULE:
+[
+  {
+    "name": "Google Search",
+    "purpose": "The Google Search screen enables users to search for information using keywords or phrases."
+  }
+]
+
+---
+
+Write a module introduction for the user manual.
+
+STRICT RULES:
+1. The introduction paragraph must be 2–4 sentences, in client voice.
+2. The features list must contain one bullet per screen, naming the key action the screen enables.
+3. Use the exact screen names provided above — do not rename them.
+4. Output ONLY the JSON object below. No markdown. No explanation.
+
+OUTPUT FORMAT:
+{
+  "intro": "<2-4 sentence paragraph introducing the module>",
+  "features": [
+    "<Screen Name — what the user can do on this screen>",
+    "<…>"
+  ]
+}

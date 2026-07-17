@@ -29,3 +29,4 @@ render:
 capture:
   mode: viewport
   scroll_capture: false
+first_run_done: true

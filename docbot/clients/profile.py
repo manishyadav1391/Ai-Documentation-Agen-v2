@@ -31,8 +31,7 @@ from typing import Any
 import yaml
 from loguru import logger
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent   # c:/doc_automation_v2
-_CLIENTS_DIR = _REPO_ROOT / "clients"
+from docbot import paths
 _DEFAULT_KEY = "_default"
 
 
@@ -81,7 +80,7 @@ class ClientProfile:
         Returns:
             ``ClientProfile`` instance.
         """
-        base = Path(clients_dir) if clients_dir else _CLIENTS_DIR
+        base = Path(clients_dir) if clients_dir else paths.clients_dir()
         client_dir = base / key
         default_dir = base / _DEFAULT_KEY
 

@@ -18,6 +18,7 @@ build/
 
 # === Session data (may contain client screenshots / PII) ===
 sessions/
+browsers/
 
 # === Built manuals / output ===
 Final_Manuals/

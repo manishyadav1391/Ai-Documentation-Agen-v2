@@ -54,9 +54,10 @@ def load_prompt(name: str, version: str = "v3", **kwargs: Any) -> str:
     Raises:
         FileNotFoundError: If the template cannot be found in either location.
     """
+    from docbot import paths
     candidates = [
-        _REPO_ROOT / "prompts" / version / f"{name}.txt",
-        _REPO_ROOT / "providers" / "prompts" / f"{name}.txt",
+        paths.prompts_dir() / version / f"{name}.txt",
+        paths.provider_prompts_dir() / f"{name}.txt",
     ]
     for path in candidates:
         if path.exists():

@@ -85,6 +85,7 @@ class ReviewSessionUI:
 
         self._setup_style()
         self._build_layout()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._load_screen(self.current_screen_idx)
 
     # ────────────────────────────────────────────────────────────────────────
@@ -118,6 +119,8 @@ class ReviewSessionUI:
                   style="Top.TLabel").pack(side=tk.LEFT, padx=10)
         ttk.Button(top_bar, text="Save Session (Ctrl+S)",
                    command=self._save_session).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(top_bar, text="Save & Finish", style="Accent.TButton",
+                   command=self._save_and_close).pack(side=tk.RIGHT, padx=5)
         ttk.Button(top_bar, text="Compile Module",
                    command=self._compile_module).pack(side=tk.RIGHT, padx=5)
         ttk.Button(top_bar, text="◀ Prev (Ctrl+←)",
@@ -417,6 +420,14 @@ class ReviewSessionUI:
         self._refresh_sidebar()
         logger.info(f"Session data saved atomically for {self.session_dir.name}.")
         self.status_var.set("Session saved. ✓")
+
+    def _save_and_close(self):
+        self._save_session()
+        self.root.destroy()
+
+    def _on_close(self):
+        self._save_session()
+        self.root.destroy()
 
     def _write_legacy_json_files(self):
         final_path = self.session_dir / f"screen_{self.screen.index}_final.json"
@@ -1129,23 +1140,34 @@ class ReviewSessionUI:
         cfg = get_config()
         from main import get_provider_instance
         provider = get_provider_instance(cfg)
-        gen = Generator(provider)
-        from docbot.clients.profile import ClientProfile
-        profile = ClientProfile.load(cfg.current_client)
 
         logger.info(f"AI regeneration triggered for Screen {self.screen.index}...")
         self.root.config(cursor="watch")
-        self.root.update()
-        try:
-            self.screen.content.content_hash = ""
-            gen.generate_screen(self.session, self.screen, client_profile=profile.data)
-            self._load_screen(self.current_screen_idx)
-            self.status_var.set("Documentation regenerated. ✓")
-        except Exception as e:
-            logger.error(f"Generation failed: {e}")
-            messagebox.showerror("Error", f"AI generation failed: {e}")
-        finally:
-            self.root.config(cursor="")
+        self.status_var.set("AI is regenerating screen... Please wait.")
+        
+        def run_regen():
+            try:
+                gen = Generator(provider)
+                from docbot.clients.profile import ClientProfile
+                profile = ClientProfile.load(cfg.current_client)
+                self.screen.content.content_hash = ""
+                gen.generate_screen(self.session, self.screen, client_profile=profile.data)
+                
+                def success():
+                    self._load_screen(self.current_screen_idx)
+                    self.status_var.set("Documentation regenerated. ✓")
+                    self.root.config(cursor="")
+                self.root.after(0, success)
+            except Exception as e:
+                logger.error(f"Generation failed: {e}")
+                def fail(err=e):
+                    messagebox.showerror("Error", f"AI generation failed: {err}")
+                    self.status_var.set("Generation failed. ✗")
+                    self.root.config(cursor="")
+                self.root.after(0, fail)
+
+        import threading
+        threading.Thread(target=run_regen, daemon=True).start()
 
     def _regen_steps(self):
         custom = simpledialog.askstring("Custom Instructions",
@@ -1161,38 +1183,43 @@ class ReviewSessionUI:
             f"Return ONLY a JSON array of strings containing the step texts. No other text."
         )
         self.root.config(cursor="watch")
-        self.root.update()
-        try:
-            raw = provider.chat(prompt)
-            from providers.base import _strip_fences
-            steps_arr = json.loads(_strip_fences(raw))
-            if isinstance(steps_arr, list):
-                self.screen.content.steps = [
-                    Step(n=i + 1, text=str(txt), kind="action")
-                    for i, txt in enumerate(steps_arr)
-                ]
-                self._refresh_steps_listbox()
-                self.status_var.set("Steps regenerated. ✓")
-        except Exception as e:
-            messagebox.showerror("Error", f"Could not regenerate steps: {e}")
-        finally:
-            self.root.config(cursor="")
+        self.status_var.set("AI is regenerating steps...")
+        
+        def run_steps_regen():
+            try:
+                raw = provider.chat(prompt)
+                from providers.base import _strip_fences
+                steps_arr = json.loads(_strip_fences(raw))
+                if isinstance(steps_arr, list):
+                    def success(arr=steps_arr):
+                        self.screen.content.steps = [
+                            Step(n=i + 1, text=str(txt), kind="action")
+                            for i, txt in enumerate(arr)
+                        ]
+                        self._refresh_steps_listbox()
+                        self.status_var.set("Steps regenerated. ✓")
+                        self.root.config(cursor="")
+                    self.root.after(0, success)
+            except Exception as e:
+                def fail(err=e):
+                    messagebox.showerror("Error", f"Could not regenerate steps: {err}")
+                    self.status_var.set("Steps regeneration failed. ✗")
+                    self.root.config(cursor="")
+                self.root.after(0, fail)
+
+        import threading
+        threading.Thread(target=run_steps_regen, daemon=True).start()
 
     def _compile_module(self):
         self._save_active_screen_inputs()
         SessionStore.save(self.session, self.session_dir)
         from assemble import assemble_module
         try:
-            assemble_module(self.session_dir)
-            import re
-            m = re.search(r"(\d{8}_\d{6})", self.session_dir.name)
-            ts = m.group(1) if m else ""
-            client_key = get_config().current_client
-            doc_name = (f"final_{client_key}_manual_{ts}.docx"
-                        if ts else "module_draft.docx")
+            output_docx = assemble_module(self.session_dir)
+            doc_name = output_docx.name
             messagebox.showinfo("Success",
                                 f"Draft module compiled inside {self.session_dir.name} "
-                                f"and copied to workspace root as {doc_name}!")
+                                f"and saved to Final_Manuals as {doc_name}!")
         except Exception as e:
             messagebox.showerror("Error", f"Assembly failed: {e}")
 

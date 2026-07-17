@@ -155,13 +155,17 @@ class StyleConfig:
 
 def load_style(
     client_key: str,
-    styles_dir: str = "styles",
+    styles_dir: Any = None,
 ) -> StyleConfig:
     """
     Load style configuration. Prioritizes the client profile folder (clients/<client_key>/style.yaml)
     before falling back to legacy styles/<client_key>.yaml or default templates.
     """
-    client_style_path = Path("clients") / client_key / "style.yaml"
+    from docbot import paths
+    if styles_dir is None:
+        styles_dir = paths.styles_dir()
+
+    client_style_path = paths.clients_dir() / client_key / "style.yaml"
     if client_style_path.exists():
         style_path = client_style_path
     else:

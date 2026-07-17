@@ -79,7 +79,7 @@ def _parse_section(raw: Dict[str, Any]) -> SectionEntry:
 
 def load_manifest(
     client_key: str,
-    content_dir: str = "content",
+    content_dir: Any = None,
 ) -> ManifestConfig:
     """
     Load and parse clients/<client_key>/manifest.yaml (preferred) or
@@ -90,7 +90,7 @@ def load_manifest(
 
     Args:
         client_key: The client folder name (e.g. 'ncd').
-        content_dir: Root content directory (default: 'content').
+        content_dir: Root content directory (default: None, resolves to paths.content_dir()).
 
     Returns:
         A ManifestConfig with resolved paths.
@@ -98,8 +98,11 @@ def load_manifest(
     Raises:
         FileNotFoundError: If neither client nor default manifest exists.
     """
+    from docbot import paths
+    if content_dir is None:
+        content_dir = paths.content_dir()
     # Prefer clients/<key>/manifest.yaml over legacy content/<key>/manifest.yaml
-    client_root = Path("clients") / client_key
+    client_root = paths.clients_dir() / client_key
     client_manifest = client_root / "manifest.yaml"
 
     base = Path(content_dir).resolve()
@@ -149,12 +152,15 @@ def load_manifest(
     )
 
 
-def get_available_clients(content_dir: str = "content") -> List[str]:
+def get_available_clients(content_dir: Any = None) -> List[str]:
     """Return a list of client keys that have manifest.yaml files."""
+    from docbot import paths
+    if content_dir is None:
+        content_dir = paths.content_dir()
     found = set()
 
     # Check clients/ directory first
-    clients_root = Path("clients")
+    clients_root = paths.clients_dir()
     if clients_root.exists():
         for child in sorted(clients_root.iterdir()):
             if child.is_dir() and child.name != "_default":

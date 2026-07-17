@@ -37,14 +37,15 @@ def assemble_module(session_dir: Path):
 
     logger.info(f"Building local module draft for '{client_key}' in {session_dir.name}…")
 
+    from docbot import paths
     # Load client metadata and styling
     try:
-        manifest = load_manifest(client_key, content_dir=config.content_dir)
-        style = load_style(client_key, styles_dir=config.styles_dir)
+        manifest = load_manifest(client_key)
+        style = load_style(client_key)
     except Exception as e:
         logger.warning(f"Failed to load config for '{client_key}': {e}. Using defaults.")
-        manifest = load_manifest("_default", content_dir=config.content_dir)
-        style = load_style("_default", styles_dir=config.styles_dir)
+        manifest = load_manifest("_default")
+        style = load_style("_default")
 
     numbering_mode = getattr(manifest, "numbering_mode", "module_prefixed")
     numbering = NumberingTracker(style, mode=numbering_mode)
@@ -60,7 +61,7 @@ def assemble_module(session_dir: Path):
     output_filename = _make_output_filename(manifest, timestamp)
 
     # G: Save to Final_Manuals/ subdirectory in workspace root
-    final_dir = Path("Final_Manuals")
+    final_dir = paths.outputs_dir()
     final_dir.mkdir(parents=True, exist_ok=True)
     output_docx = final_dir / output_filename
 

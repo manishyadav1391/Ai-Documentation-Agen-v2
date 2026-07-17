@@ -50,6 +50,7 @@ def setup_logging(level: str = "INFO") -> None:
 
     Removes the default loguru sink and installs:
     - A coloured stderr sink at *level* (default INFO).
+    - A global file log at logs_dir() / docbot.log.
 
     Call once at application startup before any logger usage.
     """
@@ -58,16 +59,32 @@ def setup_logging(level: str = "INFO") -> None:
     # Remove loguru's default handler
     logger.remove()
 
-    _STDERR_SINK_ID = logger.add(
-        sys.stderr,
-        level=level,
-        format=_STDERR_FORMAT,
-        colorize=True,
+    if sys.stderr is not None:
+        _STDERR_SINK_ID = logger.add(
+            sys.stderr,
+            level=level,
+            format=_STDERR_FORMAT,
+            colorize=True,
+            backtrace=True,
+            diagnose=False,
+        )
+
+    # Add global file log
+    from docbot import paths
+    global_log = paths.logs_dir() / "docbot.log"
+    global_log.parent.mkdir(parents=True, exist_ok=True)
+    logger.add(
+        str(global_log),
+        level="DEBUG",
+        format=_FILE_FORMAT,
+        rotation="10 MB",
+        retention=3,
+        encoding="utf-8",
         backtrace=True,
-        diagnose=False,
+        diagnose=True,
     )
 
-    logger.debug("Logging initialised (stderr sink active).")
+    logger.debug("Logging initialised (stderr and file sinks active).")
 
 
 def attach_session_log(session_dir: Path) -> None:
