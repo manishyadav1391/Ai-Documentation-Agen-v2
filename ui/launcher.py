@@ -1368,6 +1368,15 @@ def main():
     setup_logging()
     root = tk.Tk()
     apply_tk_scaling(root)
+    
+    # Apply app icon
+    try:
+        icon_path = paths.bundle_dir() / "assets" / "docbot.ico"
+        if icon_path.exists():
+            root.iconbitmap(str(icon_path))
+    except Exception as e:
+        logger.warning(f"Failed to load application icon: {e}")
+        
     app = LauncherUI(root)
     root.mainloop()
 

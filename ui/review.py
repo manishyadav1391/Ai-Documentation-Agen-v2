@@ -77,6 +77,14 @@ class ReviewSessionUI:
         self.root.geometry(f"{w}x{h}+{x}+{y}")
         self.root.minsize(800, 600)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        
+        # Apply app icon
+        try:
+            icon_path = paths.bundle_dir() / "assets" / "docbot.ico"
+            if icon_path.exists():
+                self.root.iconbitmap(str(icon_path))
+        except Exception as e:
+            logger.warning(f"Failed to load review window icon: {e}")
 
         self.session = SessionStore.load(self.session_dir)
         if not self.session.screens:
