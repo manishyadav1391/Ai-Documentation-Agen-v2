@@ -487,7 +487,7 @@ class ClientSettingsDialog(tk.Toplevel):
                     return yaml.safe_load(f) or {}
             except Exception:
                 pass
-         def build_ui(self):
+    def build_ui(self):
         scroll = ScrollableFrame(self)
         scroll.pack(fill=tk.BOTH, expand=True)
         
@@ -950,7 +950,7 @@ class LauncherUI:
 
         # Provider Indicator Dot
         self.provider_dot = tk.Frame(f, width=12, height=12, bg="#EF4444", bd=1, relief="solid")
-        self.provider_dot.grid(row=0, column=4, padx=8, sticky="center")
+        self.provider_dot.grid(row=0, column=4, padx=8)
 
         # Global Settings Button
         settings_btn = ttk.Button(f, text="Settings", command=self.open_settings_dialog)
