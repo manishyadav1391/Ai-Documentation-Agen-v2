@@ -487,164 +487,162 @@ class ClientSettingsDialog(tk.Toplevel):
                     return yaml.safe_load(f) or {}
             except Exception:
                 pass
-        return {}
-
-    def build_ui(self):
+         def build_ui(self):
         scroll = ScrollableFrame(self)
         scroll.pack(fill=tk.BOTH, expand=True)
         
         main_frame = ttk.Frame(scroll.body)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
 
-        tk.Label(main_frame, text=f"Client Settings Configuration — {self.client_key.upper()}", 
-                 font=("Segoe UI", 12, "bold"), fg="#1E293B").pack(pady=(0, 15))
+        ttk.Label(main_frame, text=f"Client Settings Configuration — {self.client_key.upper()}", 
+                  font=("Segoe UI Semibold", 12)).pack(pady=(0, 15))
 
         self.notebook = ttk.Notebook(main_frame)
         self.notebook.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
 
         # --- Tab 1: Identity ---
-        t1 = tk.Frame(self.notebook, padx=10, pady=10)
+        t1 = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(t1, text="Identity (manifest)")
         
-        tk.Label(t1, text="Client Display Name:", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", pady=5)
-        self.client_display_name_entry = tk.Entry(t1, width=35)
+        ttk.Label(t1, text="Client Display Name:").grid(row=0, column=0, sticky="w", pady=5)
+        self.client_display_name_entry = ttk.Entry(t1, width=35)
         self.client_display_name_entry.insert(0, self.manifest_data.get("client_display_name", ""))
         self.client_display_name_entry.grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
-        tk.Label(t1, text="System Name:", font=("Segoe UI", 9)).grid(row=1, column=0, sticky="w", pady=5)
-        self.system_name_entry = tk.Entry(t1, width=35)
+        ttk.Label(t1, text="System Name:").grid(row=1, column=0, sticky="w", pady=5)
+        self.system_name_entry = ttk.Entry(t1, width=35)
         self.system_name_entry.insert(0, self.manifest_data.get("system_name", ""))
         self.system_name_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
-        tk.Label(t1, text="System Acronym:", font=("Segoe UI", 9)).grid(row=2, column=0, sticky="w", pady=5)
-        self.system_acronym_entry = tk.Entry(t1, width=15)
+        ttk.Label(t1, text="System Acronym:").grid(row=2, column=0, sticky="w", pady=5)
+        self.system_acronym_entry = ttk.Entry(t1, width=15)
         self.system_acronym_entry.insert(0, self.manifest_data.get("system_acronym", ""))
         self.system_acronym_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
 
-        tk.Label(t1, text="Manual Title:", font=("Segoe UI", 9)).grid(row=3, column=0, sticky="w", pady=5)
-        self.manual_title_entry = tk.Entry(t1, width=35)
+        ttk.Label(t1, text="Manual Title:").grid(row=3, column=0, sticky="w", pady=5)
+        self.manual_title_entry = ttk.Entry(t1, width=35)
         self.manual_title_entry.insert(0, self.manifest_data.get("manual_title", "User Manual"))
         self.manual_title_entry.grid(row=3, column=1, sticky="w", padx=5, pady=5)
 
-        tk.Label(t1, text="Document Version:", font=("Segoe UI", 9)).grid(row=4, column=0, sticky="w", pady=5)
-        self.version_entry = tk.Entry(t1, width=15)
+        ttk.Label(t1, text="Document Version:").grid(row=4, column=0, sticky="w", pady=5)
+        self.version_entry = ttk.Entry(t1, width=15)
         self.version_entry.insert(0, self.manifest_data.get("version", "1.0"))
         self.version_entry.grid(row=4, column=1, sticky="w", padx=5, pady=5)
 
-        tk.Label(t1, text="Revision Prepared By:", font=("Segoe UI", 9)).grid(row=5, column=0, sticky="w", pady=5)
-        self.prepared_by_entry = tk.Entry(t1, width=35)
-        self.prepared_by_entry.insert(0, self.manifest_data.get("prepared_by", ""))
+        ttk.Label(t1, text="Revision Prepared By:").grid(row=5, column=0, sticky="w", pady=5)
+        self.prepared_by_entry = ttk.Entry(t1, width=35)
+        self.prepared_by_entry.insert(0, self.prepared_by_entry_value if hasattr(self, 'prepared_by_entry_value') else self.manifest_data.get("prepared_by", ""))
         self.prepared_by_entry.grid(row=5, column=1, sticky="w", padx=5, pady=5)
 
-        tk.Label(t1, text="Revision Reviewed By:", font=("Segoe UI", 9)).grid(row=6, column=0, sticky="w", pady=5)
-        self.reviewed_by_entry = tk.Entry(t1, width=35)
+        ttk.Label(t1, text="Revision Reviewed By:").grid(row=6, column=0, sticky="w", pady=5)
+        self.reviewed_by_entry = ttk.Entry(t1, width=35)
         self.reviewed_by_entry.insert(0, self.manifest_data.get("reviewed_by", ""))
         self.reviewed_by_entry.grid(row=6, column=1, sticky="w", padx=5, pady=5)
 
-        tk.Label(t1, text="Revision Approved By:", font=("Segoe UI", 9)).grid(row=7, column=0, sticky="w", pady=5)
-        self.approved_by_entry = tk.Entry(t1, width=35)
+        ttk.Label(t1, text="Revision Approved By:").grid(row=7, column=0, sticky="w", pady=5)
+        self.approved_by_entry = ttk.Entry(t1, width=35)
         self.approved_by_entry.insert(0, self.manifest_data.get("approved_by", ""))
         self.approved_by_entry.grid(row=7, column=1, sticky="w", padx=5, pady=5)
 
-        tk.Label(t1, text="Numbering Mode:", font=("Segoe UI", 9)).grid(row=8, column=0, sticky="w", pady=5)
+        ttk.Label(t1, text="Numbering Mode:").grid(row=8, column=0, sticky="w", pady=5)
         self.num_mode_combo = ttk.Combobox(t1, values=["module_prefixed", "continuous"], state="readonly", width=18)
         self.num_mode_combo.set(self.manifest_data.get("numbering_mode", "module_prefixed"))
         self.num_mode_combo.grid(row=8, column=1, sticky="w", padx=5, pady=5)
 
         # --- Tab 2: Branding ---
-        t2 = tk.Frame(self.notebook, padx=10, pady=10)
+        t2 = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(t2, text="Branding (style)")
 
-        tk.Label(t2, text="Font Family:", font=("Segoe UI", 9)).grid(row=0, column=0, sticky="w", pady=5)
+        ttk.Label(t2, text="Font Family:").grid(row=0, column=0, sticky="w", pady=5)
         self.font_combo = ttk.Combobox(t2, values=["Segoe UI", "Arial", "Calibri", "Georgia", "Times New Roman"], state="readonly", width=18)
         self.font_combo.set(self.style_data["fonts"].get("body_family", "Segoe UI"))
         self.font_combo.grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
-        tk.Label(t2, text="Body Font Size (pt):", font=("Segoe UI", 9)).grid(row=1, column=0, sticky="w", pady=5)
+        ttk.Label(t2, text="Body Font Size (pt):").grid(row=1, column=0, sticky="w", pady=5)
         self.font_size_spin = ttk.Spinbox(t2, from_=8, to=24, increment=0.5, width=10)
         self.font_size_spin.set(str(self.style_data["fonts"].get("body_size_pt", 10.5)))
         self.font_size_spin.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
-        tk.Label(t2, text="Primary Color (Hex):", font=("Segoe UI", 9)).grid(row=2, column=0, sticky="w", pady=5)
-        self.primary_entry = tk.Entry(t2, width=12)
+        ttk.Label(t2, text="Primary Color (Hex):").grid(row=2, column=0, sticky="w", pady=5)
+        self.primary_entry = ttk.Entry(t2, width=12)
         p_val = self.style_data["colors"].get("primary", "1B365D")
         self.primary_entry.insert(0, f"#{p_val}" if not p_val.startswith("#") else p_val)
         self.primary_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
-        tk.Button(t2, text="Pick...", command=lambda: self.pick_color(self.primary_entry)).grid(row=2, column=2, sticky="w", padx=2, pady=5)
+        ttk.Button(t2, text="Pick...", command=lambda: self.pick_color(self.primary_entry)).grid(row=2, column=2, sticky="w", padx=2, pady=5)
 
-        tk.Label(t2, text="Secondary Color (Hex):", font=("Segoe UI", 9)).grid(row=3, column=0, sticky="w", pady=5)
-        self.secondary_entry = tk.Entry(t2, width=12)
+        ttk.Label(t2, text="Secondary Color (Hex):").grid(row=3, column=0, sticky="w", pady=5)
+        self.secondary_entry = ttk.Entry(t2, width=12)
         s_val = self.style_data["colors"].get("secondary", "D97706")
         self.secondary_entry.insert(0, f"#{s_val}" if not s_val.startswith("#") else s_val)
         self.secondary_entry.grid(row=3, column=1, sticky="w", padx=5, pady=5)
-        tk.Button(t2, text="Pick...", command=lambda: self.pick_color(self.secondary_entry)).grid(row=3, column=2, sticky="w", padx=2, pady=5)
+        ttk.Button(t2, text="Pick...", command=lambda: self.pick_color(self.secondary_entry)).grid(row=3, column=2, sticky="w", padx=2, pady=5)
 
-        tk.Label(t2, text="Company Logo File:", font=("Segoe UI", 9)).grid(row=4, column=0, sticky="w", pady=5)
-        self.logo_entry = tk.Entry(t2, width=32)
+        ttk.Label(t2, text="Company Logo File:").grid(row=4, column=0, sticky="w", pady=5)
+        self.logo_entry = ttk.Entry(t2, width=32)
         self.logo_entry.insert(0, self.style_data["logo"].get("path", ""))
         self.logo_entry.grid(row=4, column=1, sticky="w", padx=5, pady=5)
-        tk.Button(t2, text="Browse...", command=self.browse_logo).grid(row=4, column=2, sticky="w", padx=2, pady=5)
+        ttk.Button(t2, text="Browse...", command=self.browse_logo).grid(row=4, column=2, sticky="w", padx=2, pady=5)
 
         # Cover details
-        tk.Label(t2, text="Cover Title text:", font=("Segoe UI", 9)).grid(row=5, column=0, sticky="w", pady=5)
-        self.cover_title_entry = tk.Entry(t2, width=35)
+        ttk.Label(t2, text="Cover Title text:").grid(row=5, column=0, sticky="w", pady=5)
+        self.cover_title_entry = ttk.Entry(t2, width=35)
         title_lines = self.cover_data.get("title_lines", [])
         self.cover_title_entry.insert(0, title_lines[0] if len(title_lines) > 0 else "")
         self.cover_title_entry.grid(row=5, column=1, columnspan=2, sticky="w", padx=5, pady=5)
 
-        tk.Label(t2, text="Cover Subtitle text:", font=("Segoe UI", 9)).grid(row=6, column=0, sticky="w", pady=5)
-        self.cover_subtitle_entry = tk.Entry(t2, width=35)
+        ttk.Label(t2, text="Cover Subtitle text:").grid(row=6, column=0, sticky="w", pady=5)
+        self.cover_subtitle_entry = ttk.Entry(t2, width=35)
         self.cover_subtitle_entry.insert(0, title_lines[1] if len(title_lines) > 1 else "")
         self.cover_subtitle_entry.grid(row=6, column=1, columnspan=2, sticky="w", padx=5, pady=5)
 
         # Annotations branding settings
         annot = self.style_data.get("annotations", {})
         
-        tk.Label(t2, text="Callout Style:", font=("Segoe UI", 9)).grid(row=7, column=0, sticky="w", pady=5)
+        ttk.Label(t2, text="Callout Style:").grid(row=7, column=0, sticky="w", pady=5)
         self.callout_style_combo = ttk.Combobox(t2, values=["Labeled bubble", "Numbered"], state="readonly", width=18)
         current_style = annot.get("callout_style", "numbered")
         self.callout_style_combo.set("Labeled bubble" if current_style == "bubble_label" else "Numbered")
         self.callout_style_combo.grid(row=7, column=1, sticky="w", padx=5, pady=5)
         
-        tk.Label(t2, text="Callout color:", font=("Segoe UI", 9)).grid(row=8, column=0, sticky="w", pady=5)
-        self.callout_color_entry = tk.Entry(t2, width=12)
+        ttk.Label(t2, text="Callout color:").grid(row=8, column=0, sticky="w", pady=5)
+        self.callout_color_entry = ttk.Entry(t2, width=12)
         cc_val = annot.get("callout_border", "E5484D")
         self.callout_color_entry.insert(0, f"#{cc_val}" if not cc_val.startswith("#") else cc_val)
         self.callout_color_entry.grid(row=8, column=1, sticky="w", padx=5, pady=5)
-        tk.Button(t2, text="Pick...", command=lambda: self.pick_color(self.callout_color_entry)).grid(row=8, column=2, sticky="w", padx=2, pady=5)
+        ttk.Button(t2, text="Pick...", command=lambda: self.pick_color(self.callout_color_entry)).grid(row=8, column=2, sticky="w", padx=2, pady=5)
         
-        tk.Label(t2, text="Pointer tail:", font=("Segoe UI", 9)).grid(row=9, column=0, sticky="w", pady=5)
+        ttk.Label(t2, text="Pointer tail:").grid(row=9, column=0, sticky="w", pady=5)
         self.callout_tail_var = tk.BooleanVar(value=bool(annot.get("callout_tail", True)))
-        self.callout_tail_chk = tk.Checkbutton(t2, variable=self.callout_tail_var)
+        self.callout_tail_chk = ttk.Checkbutton(t2, variable=self.callout_tail_var)
         self.callout_tail_chk.grid(row=9, column=1, sticky="w", padx=5, pady=5)
 
         # --- Tab 3: Writing Voice ---
-        t3 = tk.Frame(self.notebook, padx=10, pady=10)
+        t3 = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(t3, text="Voice (rules)")
 
-        tk.Label(t3, text="App Name in Prose:", font=("Segoe UI", 9)).grid(row=0, column=0, sticky="w", pady=5)
-        self.app_name_entry = tk.Entry(t3, width=35)
+        ttk.Label(t3, text="App Name in Prose:").grid(row=0, column=0, sticky="w", pady=5)
+        self.app_name_entry = ttk.Entry(t3, width=35)
         self.app_name_entry.insert(0, self.voice_data.get("app_name", ""))
         self.app_name_entry.grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
-        tk.Label(t3, text="Fields Styling Mode:", font=("Segoe UI", 9)).grid(row=1, column=0, sticky="w", pady=5)
+        ttk.Label(t3, text="Fields Styling Mode:").grid(row=1, column=0, sticky="w", pady=5)
         self.field_style_var = tk.StringVar(value=self.style_data.get("fields", {}).get("style", "table"))
-        tk.Radiobutton(t3, text="Grid/Table layout", variable=self.field_style_var, value="table").grid(row=1, column=1, sticky="w", padx=5, pady=5)
-        tk.Radiobutton(t3, text="Bullet list layout", variable=self.field_style_var, value="bullets").grid(row=1, column=2, sticky="w", padx=5, pady=5)
+        ttk.Radiobutton(t3, text="Grid/Table layout", variable=self.field_style_var, value="table").grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        ttk.Radiobutton(t3, text="Bullet list layout", variable=self.field_style_var, value="bullets").grid(row=1, column=2, sticky="w", padx=5, pady=5)
 
-        tk.Label(t3, text="Navigation Sentence:", font=("Segoe UI", 9)).grid(row=2, column=0, sticky="w", pady=5)
-        self.nav_temp_entry = tk.Entry(t3, width=45)
+        ttk.Label(t3, text="Navigation Sentence:").grid(row=2, column=0, sticky="w", pady=5)
+        self.nav_temp_entry = ttk.Entry(t3, width=45)
         self.nav_temp_entry.insert(0, self.voice_data.get("navigation_template", "Navigate to {screen_name}."))
         self.nav_temp_entry.grid(row=2, column=1, columnspan=2, sticky="w", padx=5, pady=5)
 
-        tk.Label(t3, text="Tone/Writing Rules (one per line):", font=("Segoe UI", 9)).grid(row=3, column=0, sticky="w", pady=5)
+        ttk.Label(t3, text="Tone/Writing Rules (one per line):").grid(row=3, column=0, sticky="w", pady=5)
         self.tone_rules_text = tk.Text(t3, width=50, height=8, font=("Segoe UI", 9))
         self.tone_rules_text.grid(row=4, column=0, columnspan=3, padx=5, pady=5, sticky="we")
         rules = self.voice_data.get("tone_rules", [])
         self.tone_rules_text.insert(tk.END, "\n".join(rules))
 
         # --- Tab 4: Glossary ---
-        t4 = tk.Frame(self.notebook, padx=10, pady=10)
+        t4 = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(t4, text="Glossary terms")
 
         # Treeview grid
@@ -657,30 +655,30 @@ class ClientSettingsDialog(tk.Toplevel):
         self.glossary_tree.bind("<<TreeviewSelect>>", self._on_glossary_select)
 
         # Editor frame below list
-        g_edit = tk.Frame(t4)
+        g_edit = ttk.Frame(t4)
         g_edit.pack(fill=tk.X)
 
-        tk.Label(g_edit, text="Term:", font=("Segoe UI", 9)).grid(row=0, column=0, sticky="w", pady=2)
-        self.term_entry = tk.Entry(g_edit, width=20)
+        ttk.Label(g_edit, text="Term:").grid(row=0, column=0, sticky="w", pady=2)
+        self.term_entry = ttk.Entry(g_edit, width=20)
         self.term_entry.grid(row=0, column=1, sticky="w", padx=5, pady=2)
 
-        tk.Label(g_edit, text="Definition:", font=("Segoe UI", 9)).grid(row=0, column=2, sticky="w", pady=2)
-        self.defn_entry = tk.Entry(g_edit, width=32)
+        ttk.Label(g_edit, text="Definition:").grid(row=0, column=2, sticky="w", pady=2)
+        self.defn_entry = ttk.Entry(g_edit, width=32)
         self.defn_entry.grid(row=0, column=3, sticky="we", padx=5, pady=2)
 
-        btn_g_frame = tk.Frame(t4, pady=5)
+        btn_g_frame = ttk.Frame(t4, padding=5)
         btn_g_frame.pack(fill=tk.X)
-        tk.Button(btn_g_frame, text="Add / Update", bg="#EFF6FF", command=self._add_glossary_term).pack(side=tk.LEFT, padx=5)
-        tk.Button(btn_g_frame, text="Remove Selected", bg="#FEE2E2", fg="#B91C1C", command=self._remove_glossary_term).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_g_frame, text="Add / Update", command=self._add_glossary_term).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_g_frame, text="Remove Selected", command=self._remove_glossary_term).pack(side=tk.LEFT, padx=5)
 
         self._refresh_glossary_tree()
 
         # Bottom buttons
-        btn_frame = tk.Frame(main_frame)
+        btn_frame = ttk.Frame(main_frame)
         btn_frame.pack(fill=tk.X, pady=(15, 0))
 
-        tk.Button(btn_frame, text="Cancel", width=12, command=self.destroy).pack(side=tk.LEFT, padx=5)
-        tk.Button(btn_frame, text="Save Settings", bg="lightgreen", font=("Segoe UI", 10, "bold"), width=15, command=self.save_settings).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=self.destroy).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Save Settings", style="Primary.TButton", command=self.save_settings).pack(side=tk.RIGHT, padx=5)
 
     def pick_color(self, entry_widget):
         curr_val = entry_widget.get()
