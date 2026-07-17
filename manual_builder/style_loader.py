@@ -67,6 +67,10 @@ class StyleConfig:
     def footer(self) -> Dict[str, Any]:
         return self.raw.get("footer", {})
 
+    @property
+    def annotations(self) -> Dict[str, Any]:
+        return self.raw.get("annotations", {})
+
     # ── Font helpers ──────────────────────────────────────────────────────
 
     @property
