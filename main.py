@@ -77,7 +77,8 @@ def run_pipeline(
         start_url=start_url or "https://google.com",
         client_key=config.current_client,
         module_name=module_name or "",
-        module_number=module_number
+        module_number=module_number,
+        progress_callback=progress_callback
     )
 
     if cancel_event and cancel_event.is_set():

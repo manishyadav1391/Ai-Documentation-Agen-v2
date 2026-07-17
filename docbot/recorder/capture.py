@@ -582,6 +582,8 @@ class CaptureSession:
             kept += 1
 
         self.session.screens.append(screen)
+        if getattr(self, "progress_callback", None):
+            self.progress_callback(f"SCREEN_CAPTURED:{len(self.session.screens)}")
 
         if not is_state:
             self._state["screen_index"] += 1
@@ -682,6 +684,7 @@ def run_capture_session(
     client_key: str = "default",
     module_name: str = "",
     module_number: int | None = None,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> SessionModel:
     """Convenience entry point called from main.py / launcher."""
     cfg = get_config()
@@ -692,6 +695,7 @@ def run_capture_session(
         module_name=module_name,
         module_number=module_number,
     )
+    session.progress_callback = progress_callback
     model = session.run()
     model._session_dir = session.session_dir
     return model

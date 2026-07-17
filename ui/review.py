@@ -35,7 +35,7 @@ from tkinter import ttk, messagebox, simpledialog
 from PIL import Image, ImageTk
 from loguru import logger
 
-from config import get_config
+from config import get_config, save_config
 from docbot.models import SessionStore, Screen, Region, FieldDetail, Step, BBox
 from docbot.processing.generator import Generator
 from docbot.processing.annotate import render_annotations, _wrap_text
@@ -54,11 +54,29 @@ class ReviewSessionUI:
         self.root = root
         self.session_dir = session_dir
         self.root.title("DocBot v3 — Master Session Review")
-        self.root.geometry("1480x950")
-        try:
-            self.root.state("zoomed")
-        except Exception:
-            pass
+        
+        self.config = get_config()
+        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        w = min(1480, int(sw * 0.9))
+        h = min(950, int(sh * 0.9))
+        x, y = (sw - w) // 2, (sh - h) // 2
+        
+        saved = getattr(self.config, "review_geometry", None)
+        if saved:
+            try:
+                size, xs, ys = saved.split("+")
+                w0, h0 = (int(v) for v in size.split("x"))
+                x0, y0 = int(xs), int(ys)
+                # clamp
+                w = min(w0, sw - 20)
+                h = min(h0, sh - 60)
+                x = max(0, min(x0, sw - w))
+                y = max(0, min(y0, sh - h))
+            except Exception:
+                pass
+        self.root.geometry(f"{w}x{h}+{x}+{y}")
+        self.root.minsize(800, 600)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.session = SessionStore.load(self.session_dir)
         if not self.session.screens:
@@ -433,10 +451,14 @@ class ReviewSessionUI:
         self.status_var.set("Session saved. ✓")
 
     def _save_and_close(self):
+        self.config.review_geometry = self.root.winfo_geometry()
+        save_config(self.config)
         self._save_session()
         self.root.destroy()
 
     def _on_close(self):
+        self.config.review_geometry = self.root.winfo_geometry()
+        save_config(self.config)
         self._save_session()
         self.root.destroy()
 

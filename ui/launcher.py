@@ -33,7 +33,9 @@ from docbot.clients.profile import ClientProfile
 from manual_builder.manifest_loader import get_available_clients
 from docbot import paths
 from ui.settings_dialog import SettingsDialog
-from ui.widgets import ScrollableFrame, setup_dialog
+from ui.widgets import ScrollableFrame, setup_dialog, ToolTip
+from ui.theme import apply_theme
+from ui.views import RecordView, RecordingsView, ManualsView, ClientsView
 
 # -----------------------------------------------------------------------------
 # Single Instance and Process Helpers
@@ -851,13 +853,18 @@ class ClientSettingsDialog(tk.Toplevel):
 class LauncherUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("DocBot v3 — Control Launcher")
-        self.root.geometry("740x740")
-        self.root.resizable(False, False)
+        self.root.title("DocBot")
         
         self.config = get_config()
         self.client_key = self.config.current_client
-
+        
+        # Load theme
+        apply_theme(self.root)
+        
+        # Geometry Persistence
+        restore_geometry(self.root, self.config)
+        save_geometry_on_close(self.root, self.config)
+        
         # Install global exception handlers
         self.setup_global_crash_handler()
 
@@ -867,159 +874,180 @@ class LauncherUI:
             self.root.destroy()
             sys.exit(0)
 
-        # Title
-        tk.Label(root, text="DocBot v3 — Documentation Orchestrator", font=("Arial", 16, "bold"), fg="#1F3864").pack(pady=15)
+        # Set grid layout weights
+        self.root.columnconfigure(0, weight=0)
+        self.root.columnconfigure(1, weight=1)
+        self.root.rowconfigure(0, weight=0)
+        self.root.rowconfigure(1, weight=1)
+        self.root.rowconfigure(2, weight=0)
+
+        # Navigation views mapping
+        self.VIEWS = [
+            ("record", "▶  Record"),
+            ("recordings", "📼  Recordings"),
+            ("manuals", "📄  Manuals"),
+            ("clients", "👥  Clients")
+        ]
         
-        # Client Selector & Customization Frame
-        client_frame = tk.LabelFrame(root, text="Active Client Configuration", padx=12, pady=10)
-        client_frame.pack(fill=tk.X, padx=20, pady=5)
+        VIEW_CLASSES = {
+            "record": RecordView,
+            "recordings": RecordingsView,
+            "manuals": ManualsView,
+            "clients": ClientsView
+        }
 
-        tk.Label(client_frame, text="Select Client:").grid(row=0, column=0, sticky="w", pady=5)
+        # Build UI layout
+        self.topbar = self._build_topbar()
+        self.sidebar = self._build_sidebar()
         
-        self.client_list = get_available_clients()
-        self.client_var = tk.StringVar(value=self.client_key)
-        self.client_combo = ttk.Combobox(client_frame, textvariable=self.client_var, values=self.client_list, state="readonly", width=18)
-        self.client_combo.grid(row=0, column=1, sticky="w", padx=5, pady=5)
-        self.client_combo.bind("<<ComboboxSelected>>", self.on_client_change)
-
-        tk.Button(client_frame, text="New Client...", bg="#F0FDF4", command=self.new_client).grid(row=0, column=2, sticky="w", padx=5, pady=5)
-
-        # Active LLM Provider selector
-        tk.Label(client_frame, text="LLM Provider:").grid(row=1, column=0, sticky="w", pady=5)
-        self.provider_var = tk.StringVar(value=self.config.provider)
-        self.provider_combo = ttk.Combobox(client_frame, textvariable=self.provider_var, values=["browser", "anthropic", "openai_compat", "ollama"], state="readonly", width=18)
-        self.provider_combo.grid(row=1, column=1, sticky="w", padx=5, pady=5)
-        self.provider_combo.bind("<<ComboboxSelected>>", self.on_provider_change)
-
-        # Inline validation status label next to provider selector (Phase 3.4)
-        self.provider_status_lbl = tk.Label(client_frame, text="", font=("Arial", 9, "bold"))
-        self.provider_status_lbl.grid(row=1, column=2, sticky="w", padx=5, pady=5)
-
-        # Style & Content Config Buttons
-        ctrl_btn_frame = tk.Frame(client_frame)
-        ctrl_btn_frame.grid(row=2, column=0, columnspan=3, sticky="w", pady=10)
-        tk.Button(ctrl_btn_frame, text="Client Settings...", bg="#EFF6FF", font=("Arial", 9, "bold"), command=self.open_style_editor).pack(side=tk.LEFT, padx=5)
-        tk.Button(ctrl_btn_frame, text="⚙ Settings / API Keys...", bg="#FFFBEB", fg="#92400E", font=("Arial", 9, "bold"), command=self.open_settings_dialog).pack(side=tk.LEFT, padx=5)
-        tk.Button(ctrl_btn_frame, text="Open Content Folder...", bg="#F5F5F5", font=("Arial", 9), command=self.open_content_folder).pack(side=tk.LEFT, padx=5)
-
-        # Summary Display Label
-        self.brand_label = tk.Label(client_frame, text="", font=("Arial", 9), fg="#475569", anchor="w", justify=tk.LEFT)
-        self.brand_label.grid(row=3, column=0, columnspan=3, sticky="w", pady=5)
-        self.refresh_brand_summary()
-        self.check_provider_status()
-
-        # Section 1: Record New Module
-        record_frame = tk.LabelFrame(root, text="1. Record New Module", padx=12, pady=10)
-        record_frame.pack(fill=tk.X, padx=20, pady=8)
+        self.content = ttk.Frame(self.root)
+        self.content.grid(row=1, column=1, sticky="nsew")
+        self.content.rowconfigure(0, weight=1)
+        self.content.columnconfigure(0, weight=1)
         
-        # Grid inputs
-        inputs_frame = tk.Frame(record_frame)
-        inputs_frame.pack(fill=tk.X, pady=2)
+        self.statusbar = self._build_statusbar()
 
-        tk.Label(inputs_frame, text="Start URL:").grid(row=0, column=0, sticky="w", pady=3)
-        self.url_entry = tk.Entry(inputs_frame, width=50)
-        self.url_entry.insert(0, "https://google.com")
-        self.url_entry.grid(row=0, column=1, columnspan=3, sticky="w", padx=5, pady=3)
+        # Key Bindings / Shortcuts (Phase D)
+        self.root.bind("<Control-r>", lambda e: self.show("record"))
+        self.root.bind("<F5>", lambda e: self.refresh_active_view())
+        self.root.bind("<Delete>", lambda e: self.delete_active_view_item())
+        self.root.bind("<Control-comma>", lambda e: self.open_settings_dialog())
 
-        tk.Label(inputs_frame, text="Module Name:").grid(row=1, column=0, sticky="w", pady=3)
-        self.module_name_entry = tk.Entry(inputs_frame, width=28)
-        self.module_name_entry.insert(0, "Search Interface")
-        self.module_name_entry.grid(row=1, column=1, sticky="w", padx=5, pady=3)
+        # Load views
+        self.views = {}
+        for key, _ in self.VIEWS:
+            view_cls = VIEW_CLASSES[key]
+            v = view_cls(self.content, app=self)
+            v.grid(row=0, column=0, sticky="nsew")
+            self.views[key] = v
 
-        tk.Label(inputs_frame, text="Number:").grid(row=1, column=2, sticky="w", pady=3)
-        self.module_num_entry = tk.Entry(inputs_frame, width=8)
-        self.module_num_entry.insert(0, "10")
-        self.module_num_entry.grid(row=1, column=3, sticky="w", padx=5, pady=3)
+        self.active_view_key = "record"
+        self.show("record")
 
-        self.record_btn = tk.Button(record_frame, text="Record New Module", bg="#2563EB", fg="white", font=("Arial", 10, "bold"), command=self.start_recording)
-        self.record_btn.pack(pady=8)
-        
-        # Section 2: Assemble Master Manual
-        assemble_frame = tk.LabelFrame(root, text="2. Compile Master Client Manual", padx=12, pady=10)
-        assemble_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=8)
-        
-        # Listbox for sessions
-        self.session_listbox = tk.Listbox(assemble_frame, selectmode=tk.MULTIPLE, height=5, font=("Arial", 9))
-        self.session_listbox.pack(fill=tk.BOTH, expand=True, pady=5)
-        self.session_listbox.bind("<Double-1>", self._on_session_double_click)
-        self.session_listbox.bind("<<ListboxSelect>>", self._on_listbox_select)
-        
-        self.selected_session_indices = []
-        self.session_mappings = []
-        self.refresh_sessions()
-        
-        btn_frame = tk.Frame(assemble_frame)
-        btn_frame.pack(fill=tk.X, pady=5)
-        
-        self.refresh_btn = tk.Button(btn_frame, text="Refresh Sessions", command=self.refresh_sessions)
-        self.refresh_btn.pack(side=tk.LEFT, padx=5)
-        self.review_btn = tk.Button(btn_frame, text="Open Review UI", command=self._open_selected_review)
-        self.review_btn.pack(side=tk.LEFT, padx=5)
-        self.view_manuals_btn = tk.Button(btn_frame, text="View Generated Manuals", bg="#3B82F6", fg="white", font=("Arial", 9, "bold"), command=self.open_manuals_viewer)
-        self.view_manuals_btn.pack(side=tk.LEFT, padx=5)
-        self.assemble_btn = tk.Button(btn_frame, text="Assemble Master Manual", bg="#059669", fg="white", font=("Arial", 10, "bold"), command=self.assemble_manual)
-        self.assemble_btn.pack(side=tk.RIGHT, padx=5)
-
-        # Trigger Welcome Wizard if first run (Phase 8)
+        # Welcome wizard / startup warning checks
         if not self.config.first_run_done:
             self.root.after(200, self.show_welcome_wizard)
         else:
-            # Gentle warning prompt if key missing on launch (Phase 3.3)
             self.root.after(300, self.prompt_missing_key_startup)
 
-    def setup_global_crash_handler(self):
-        def handle_exception(exc_type, exc_value, exc_traceback):
-            if issubclass(exc_type, KeyboardInterrupt):
-                sys.__excepthook__(exc_type, exc_value, exc_traceback)
-                return
-            logger.opt(exception=(exc_type, exc_value, exc_traceback)).error("Uncaught exception in launcher loop")
-            log_file = paths.logs_dir() / "docbot.log"
-            messagebox.showerror(
-                "Something went wrong",
-                f"An unexpected critical crash occurred.\n\n"
-                f"Details were saved to:\n{log_file.resolve()}\n\n"
-                f"Error: {exc_value}"
-            )
-        sys.excepthook = handle_exception
-        self.root.report_callback_exception = handle_exception
+    def _build_topbar(self):
+        f = ttk.Frame(self.root, padding=(12, 8))
+        f.grid(row=0, column=0, columnspan=2, sticky="ew")
+        f.columnconfigure(3, weight=1)
 
-    def show_welcome_wizard(self):
-        WelcomeWizard(self.root, self)
+        # Logo / Title
+        logo_lbl = ttk.Label(f, text="DocBot", style="Title.TLabel")
+        logo_lbl.grid(row=0, column=0, sticky="w", padx=(0, 16))
 
-    def _set_buttons_state(self, state):
-        self.record_btn.config(state=state)
-        self.assemble_btn.config(state=state)
-        self.refresh_btn.config(state=state)
-        self.review_btn.config(state=state)
-        self.view_manuals_btn.config(state=state)
-        self.client_combo.config(state="disabled" if state == tk.DISABLED else "readonly")
-        self.provider_combo.config(state="disabled" if state == tk.DISABLED else "readonly")
+        # Client Combobox
+        ttk.Label(f, text="Client:").grid(row=0, column=1, sticky="w")
+        self.client_list = get_available_clients()
+        self.client_var = tk.StringVar(value=self.client_key)
+        self.client_combo = ttk.Combobox(f, textvariable=self.client_var, values=self.client_list, state="readonly", width=18)
+        self.client_combo.grid(row=0, column=2, sticky="w", padx=6)
+        self.client_combo.bind("<<ComboboxSelected>>", self.on_client_change)
+
+        # Spacer
+        ttk.Frame(f).grid(row=0, column=3, sticky="ew")
+
+        # Provider Indicator Dot
+        self.provider_dot = tk.Frame(f, width=12, height=12, bg="#EF4444", bd=1, relief="solid")
+        self.provider_dot.grid(row=0, column=4, padx=8, sticky="center")
+
+        # Global Settings Button
+        settings_btn = ttk.Button(f, text="Settings", command=self.open_settings_dialog)
+        settings_btn.grid(row=0, column=5, sticky="e", padx=4)
+
+        return f
+
+    def _build_sidebar(self):
+        f = ttk.Frame(self.root, style="Sidebar.TFrame", padding=(0, 10))
+        f.grid(row=1, column=0, sticky="ns")
+
+        self.sidebar_buttons = {}
+        for row_idx, (key, label) in enumerate(self.VIEWS):
+            btn = ttk.Button(f, text=label, style="Sidebar.TButton", command=lambda k=key: self.show(k))
+            btn.grid(row=row_idx, column=0, sticky="ew", padx=8, pady=4)
+            self.sidebar_buttons[key] = btn
+
+        return f
+
+    def _build_statusbar(self):
+        f = ttk.Frame(self.root, padding=(12, 4), style="Status.TFrame")
+        f.grid(row=2, column=0, columnspan=2, sticky="ew")
+
+        self.status_lbl = ttk.Label(f, text="", style="Status.TLabel")
+        self.status_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        self.update_status_bar("Ready.")
+        return f
+
+    def show(self, key):
+        self.active_view_key = key
+        self.views[key].refresh()
+        self.views[key].tkraise()
+        self._highlight_sidebar(key)
+
+    def _highlight_sidebar(self, active_key):
+        for key, btn in self.sidebar_buttons.items():
+            if key == active_key:
+                btn.config(style="SidebarActive.TButton")
+            else:
+                btn.config(style="Sidebar.TButton")
+
+    def refresh_active_view(self):
+        if self.active_view_key in self.views:
+            self.views[self.active_view_key].refresh()
+
+    def delete_active_view_item(self):
+        active_view = self.views.get(self.active_view_key)
+        if active_view and hasattr(active_view, "delete_selected"):
+            active_view.delete_selected()
+
+    def update_status_bar(self, task_msg="Ready."):
+        provider = self.config.provider
+        client = self.client_key.upper()
+        status_text = f"Client: {client}   ·   Provider: {provider}   ·   {task_msg}"
+        self.status_lbl.config(text=status_text)
+
+    def change_client(self, key):
+        self.client_key = key
+        self.client_var.set(key)
+        self.config.current_client = key
+        save_config(self.config)
+        reload_config()
+        self.update_status_bar()
+        self.refresh_active_view()
+
+    def on_client_change(self, event):
+        self.change_client(self.client_var.get())
 
     def check_provider_status(self):
-        provider = self.provider_var.get()
+        provider = self.config.provider
         if provider == "browser":
-            self.provider_status_lbl.config(text="✓ Local copy-paste", fg="green")
+            self._update_status_dot(True, "Local copy-paste mode (No API key required)")
             return
         
         try:
             from main import get_provider_instance
             p_inst = get_provider_instance(self.config)
-            if provider == "ollama":
-                is_local = "localhost" in p_inst.host or "127.0.0.1" in p_inst.host
-                if is_local or p_inst.api_key:
-                    self.provider_status_lbl.config(text="✓ Ollama Ready", fg="green")
-                else:
-                    self.provider_status_lbl.config(text="✗ API Key missing", fg="red")
+            if p_inst.is_available():
+                self._update_status_dot(True, f"Provider {provider.upper()} is ready.")
             else:
-                if p_inst.is_available():
-                    self.provider_status_lbl.config(text="✓ Key configured", fg="green")
-                else:
-                    self.provider_status_lbl.config(text="✗ Key missing", fg="red")
-        except Exception:
-            self.provider_status_lbl.config(text="✗ Connection error", fg="red")
+                self._update_status_dot(False, f"API Key for {provider.upper()} is missing or invalid.")
+        except Exception as e:
+            self._update_status_dot(False, f"Connection error: {e}")
+
+    def _update_status_dot(self, is_ok, reason):
+        color = "#22C55E" if is_ok else "#EF4444"
+        self.provider_dot.config(bg=color)
+        if hasattr(self, "provider_dot_tooltip"):
+            self.provider_dot_tooltip.text = reason
+        else:
+            self.provider_dot_tooltip = ToolTip(self.provider_dot, reason)
 
     def prompt_missing_key_startup(self):
-        provider = self.provider_var.get()
+        provider = self.config.provider
         if provider != "browser":
             try:
                 from main import get_provider_instance
@@ -1030,44 +1058,18 @@ class LauncherUI:
                     messagebox.showinfo(
                         "API Key Required",
                         f"The selected provider '{provider}' requires an API key.\n"
-                        "Please click the '⚙ Settings / API Keys...' button to configure your API key."
+                        "Please click the 'Settings' button to configure your API key."
                     )
             except Exception:
                 pass
 
-    def on_client_change(self, event):
-        self.client_key = self.client_var.get()
-        self.config.current_client = self.client_key
-        save_config(self.config)
-        reload_config()
-        self.refresh_brand_summary()
-
-    def on_provider_change(self, event):
-        provider = self.provider_var.get()
-        self.config.provider = provider
-        save_config(self.config)
-        reload_config()
-        self.check_provider_status()
-        self.prompt_missing_key_startup()
-
-    def refresh_brand_summary(self):
-        try:
-            profile = ClientProfile.load(self.client_key)
-            summary = (
-                f"Client: {profile.client_display_name} | System: {profile.system_name}\n"
-                f"App Name: {profile.app_name} | Style: {profile.field_style} fields\n"
-                f"Colors: Primary #{profile.get_color('primary')} | Secondary #{profile.get_color('secondary')} | Mode: {profile.numbering_mode}"
-            )
-        except Exception as e:
-            summary = f"Error loading profile for '{self.client_key}':\n{e}"
-        self.brand_label.config(text=summary)
-
     def open_style_editor(self):
         ClientSettingsDialog(self.root, self)
-        self.refresh_brand_summary()
 
     def open_settings_dialog(self):
         SettingsDialog(self.root, self)
+        self.check_provider_status()
+        self.update_status_bar()
 
     def open_content_folder(self):
         folder = paths.clients_dir() / self.client_key
@@ -1082,7 +1084,6 @@ class LauncherUI:
             messagebox.showerror("Error", f"Client directory does not exist: {folder}")
 
     def new_client(self):
-        """Scaffold a new client directory under clients/ from defaults."""
         new_key = filedialog.asksaveasfilename(
             initialdir=str(paths.clients_dir()),
             title="Enter New Client Key (Acronym Name)",
@@ -1118,57 +1119,12 @@ class LauncherUI:
 
             self.client_list = get_available_clients()
             self.client_combo.config(values=self.client_list)
-            self.client_var.set(new_key)
-            self.on_client_change(None)
+            self.change_client(new_key)
             
             self.open_style_editor()
             messagebox.showinfo("Success", f"Client profile '{new_key}' created successfully!")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to create new client: {e}")
-
-    def refresh_sessions(self):
-        self.session_listbox.delete(0, tk.END)
-        self.selected_session_indices = []
-        self.session_mappings = []
-        
-        sessions_dir = paths.sessions_dir()
-        if sessions_dir.exists():
-            dirs = [p for p in sessions_dir.iterdir() if p.is_dir() and not p.name.startswith(".")]
-            session_infos = []
-            
-            for d in dirs:
-                session_file = d / "session.json"
-                if session_file.exists():
-                    try:
-                        with session_file.open("r", encoding="utf-8") as f:
-                            data = json.load(f)
-                        mod_name = data.get("module_name", "") or d.name
-                        mod_num = data.get("module_number", "")
-                        
-                        m = re.search(r"(\d{8}_\d{6})", d.name)
-                        ts = m.group(1) if m else ""
-                        if ts:
-                            dt = datetime.strptime(ts, "%Y%m%d_%H%M%S")
-                            display_time = dt.strftime("%Y-%m-%d %H:%M:%S")
-                        else:
-                            display_time = "Unknown time"
-                            
-                        display_name = f"{mod_name}"
-                        if mod_num is not None and str(mod_num).strip():
-                            display_name = f"Module {mod_num}: {display_name}"
-                        display_name = f"{display_name} ({display_time})"
-                        
-                        session_infos.append((d.stat().st_mtime, d.name, display_name))
-                    except Exception:
-                        session_infos.append((d.stat().st_mtime, d.name, d.name))
-                else:
-                    pass
-            
-            session_infos.sort(key=lambda x: x[0], reverse=True)
-            
-            for mtime, folder_name, display_name in session_infos:
-                self.session_listbox.insert(tk.END, display_name)
-                self.session_mappings.append(folder_name)
 
     def check_and_install_browser(self) -> bool:
         if check_chromium_exists():
@@ -1241,66 +1197,38 @@ class LauncherUI:
         self.root.wait_window(progress_win)
         return install_success[0]
 
-    def start_recording(self):
-        start_url = self.url_entry.get().strip() or "https://google.com"
-        mod_name = self.module_name_entry.get().strip()
-        mod_num_raw = self.module_num_entry.get().strip()
-        
-        if not start_url:
-            messagebox.showerror("Validation Error", "Start URL cannot be empty.")
-            return
-        if not (start_url.startswith("http://") or start_url.startswith("https://")):
-            messagebox.showerror("Validation Error", "Start URL must start with http:// or https://")
-            return
-        if not mod_name:
-            messagebox.showerror("Validation Error", "Module Name cannot be empty.")
-            return
-            
-        mod_num = None
-        if mod_num_raw:
-            try:
-                mod_num = int(mod_num_raw)
-            except ValueError:
-                messagebox.showerror("Validation Error", "Module Number must be an integer (or blank).")
-                return
-
-        if not self.check_and_install_browser():
-            return
-
-        self._set_buttons_state(tk.DISABLED)
-        
-        cancel_event = threading.Event()
-        msg_queue = queue.Queue()
-        
-        progress_win = ProgressWindow(
-            self.root, 
-            title="Recording & Generating Module",
-            cancel_callback=lambda: cancel_event.set()
-        )
+    def start_background_recording(self, start_url, mod_name, mod_num, view_instance):
+        self.recording_view = view_instance
+        self.recording_cancel_event = threading.Event()
+        self.recording_queue = queue.Queue()
         
         def run_thread():
             try:
                 resume_evt = threading.Event()
                 def progress_cb(msg):
                     if msg.startswith("REQUEST_REVIEW_UI:"):
-                        msg_queue.put(("request_review", (msg.split(":", 1)[1], resume_evt)))
+                        self.recording_queue.put(("request_review", (msg.split(":", 1)[1], resume_evt)))
                         resume_evt.wait()
+                    elif msg.startswith("SCREEN_CAPTURED:"):
+                        cnt = int(msg.split(":", 1)[1])
+                        self.recording_queue.put(("screen_captured", cnt))
                     else:
-                        msg_queue.put(("progress", msg))
+                        self.recording_queue.put(("progress", msg))
+                        
                 run_pipeline(
                     client_key=self.client_key,
                     start_url=start_url,
                     module_name=mod_name,
                     module_number=mod_num,
                     progress_callback=progress_cb,
-                    cancel_event=cancel_event
+                    cancel_event=self.recording_cancel_event
                 )
-                msg_queue.put(("done", "Pipeline finished successfully!"))
+                self.recording_queue.put(("done", "Pipeline finished successfully!"))
             except KeyboardInterrupt:
-                msg_queue.put(("cancelled", "Pipeline execution cancelled by user."))
+                self.recording_queue.put(("cancelled", "Pipeline execution cancelled by user."))
             except Exception as e:
                 logger.exception("Pipeline failed")
-                msg_queue.put(("error", str(e)))
+                self.recording_queue.put(("error", str(e)))
                 
         worker = threading.Thread(target=run_thread, daemon=True)
         worker.start()
@@ -1308,88 +1236,56 @@ class LauncherUI:
         def poll_queue():
             try:
                 while True:
-                    msg_type, data = msg_queue.get_nowait()
+                    msg_type, data = self.recording_queue.get_nowait()
                     if msg_type == "progress":
-                        progress_win.log(data)
-                        progress_win.set_status(data)
+                        self.update_status_bar(data)
+                    elif msg_type == "screen_captured":
+                        self.recording_view.update_count(data)
+                        self.update_status_bar(f"Screens captured: {data}")
                     elif msg_type == "request_review":
                         session_dir_str, resume_evt = data
                         session_dir = Path(session_dir_str)
-                        progress_win.grab_release()
-                        progress_win.withdraw()
-                        from ui.review import open_review_ui
-                        open_review_ui(session_dir, screen_index=1)
-                        progress_win.deiconify()
-                        progress_win.grab_set()
+                        self.open_review_window(session_dir)
                         resume_evt.set()
                     elif msg_type == "done":
-                        progress_win.destroy()
+                        self.recording_view.show_setup()
                         messagebox.showinfo("Success", "Module recorded and processed successfully!")
-                        self._set_buttons_state(tk.NORMAL)
-                        self.refresh_sessions()
+                        self.update_status_bar("Ready.")
+                        self.refresh_active_view()
                         return
                     elif msg_type == "cancelled":
-                        progress_win.destroy()
+                        self.recording_view.show_setup()
                         messagebox.showwarning("Cancelled", "Pipeline execution was cancelled.")
-                        self._set_buttons_state(tk.NORMAL)
-                        self.refresh_sessions()
+                        self.update_status_bar("Ready.")
+                        self.refresh_active_view()
                         return
                     elif msg_type == "error":
-                        progress_win.destroy()
+                        self.recording_view.show_setup()
                         messagebox.showerror("Pipeline Error", f"An error occurred: {data}")
-                        self._set_buttons_state(tk.NORMAL)
-                        self.refresh_sessions()
+                        self.update_status_bar("Error: " + data)
+                        self.refresh_active_view()
                         return
             except queue.Empty:
                 pass
-            
-            if worker.is_alive() or not msg_queue.empty():
+                
+            if worker.is_alive() or not self.recording_queue.empty():
                 self.root.after(100, poll_queue)
-            else:
-                progress_win.destroy()
-                self._set_buttons_state(tk.NORMAL)
-                self.refresh_sessions()
                 
         self.root.after(100, poll_queue)
 
-    def _on_listbox_select(self, event):
-        current_selection = self.session_listbox.curselection()
-        self.selected_session_indices = [idx for idx in self.selected_session_indices if idx in current_selection]
-        for idx in current_selection:
-            if idx not in self.selected_session_indices:
-                self.selected_session_indices.append(idx)
+    def cancel_background_recording(self):
+        if hasattr(self, "recording_cancel_event"):
+            self.recording_cancel_event.set()
 
-    def _on_session_double_click(self, event):
-        self._open_selected_review()
-
-    def _open_selected_review(self):
-        sel = self.session_listbox.curselection()
-        if not sel:
-            messagebox.showwarning("Warning", "Select a session from the list to review.")
-            return
-        session_name = self.session_mappings[sel[0]]
-        session_dir = paths.sessions_dir() / session_name
-        
+    def open_review_window(self, session_dir):
         from ui.review import open_review_ui
         open_review_ui(session_dir, screen_index=1)
 
-    def assemble_manual(self):
-        if not hasattr(self, 'selected_session_indices') or not self.selected_session_indices:
-            messagebox.showwarning("Warning", "Please select at least one module (session) to assemble.")
-            return
-            
-        sessions_dir = paths.sessions_dir()
-        ordered_sessions = []
-        for i in self.selected_session_indices:
-            session_name = self.session_mappings[i]
-            ordered_sessions.append(sessions_dir / session_name)
-            
+    def assemble_master_manual(self, ordered_sessions):
         client_key = self.client_key
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_filename = f"{client_key}_{timestamp}.docx"
         output_path = paths.outputs_dir() / output_filename
-        
-        self._set_buttons_state(tk.DISABLED)
         
         msg_queue = queue.Queue()
         progress_win = ProgressWindow(self.root, title="Compiling Master Client Manual")
@@ -1413,13 +1309,12 @@ class LauncherUI:
                     if msg_type == "done":
                         progress_win.destroy()
                         messagebox.showinfo("Success", f"Professional Manual compiled successfully!\nSaved to: {output_path.absolute()}")
-                        self._set_buttons_state(tk.NORMAL)
                         os.startfile(str(output_path.parent.resolve()))
+                        self.show("manuals")
                         return
                     elif msg_type == "error":
                         progress_win.destroy()
                         messagebox.showerror("Error", f"Failed to assemble manual: {data}")
-                        self._set_buttons_state(tk.NORMAL)
                         return
             except queue.Empty:
                 pass
@@ -1428,132 +1323,27 @@ class LauncherUI:
                 self.root.after(100, poll_queue)
             else:
                 progress_win.destroy()
-                self._set_buttons_state(tk.NORMAL)
                 
         self.root.after(100, poll_queue)
 
-    def open_manuals_viewer(self):
-        viewer = tk.Toplevel(self.root)
-        viewer.title("Generated Manuals")
-        viewer.geometry("750x450")
-        viewer.grab_set()  # Modal
-        
-        # Center in root window
-        viewer.transient(self.root)
-        
-        # Title Label
-        tk.Label(viewer, text="Generated Manuals", font=("Arial", 12, "bold"), fg="#1E3A8A").pack(pady=10)
-        
-        # Main frame
-        main_frame = tk.Frame(viewer, padx=15, pady=10)
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Scrollbars and Treeview
-        tree_frame = tk.Frame(main_frame)
-        tree_frame.pack(fill=tk.BOTH, expand=True)
-        
-        columns = ("name", "type", "modified", "size")
-        tree = ttk.Treeview(tree_frame, columns=columns, show="headings", selectmode="browse")
-        
-        tree.heading("name", text="File Name")
-        tree.heading("type", text="Type")
-        tree.heading("modified", text="Date Modified")
-        tree.heading("size", text="Size")
-        
-        tree.column("name", width=320, anchor="w")
-        tree.column("type", width=120, anchor="center")
-        tree.column("modified", width=150, anchor="center")
-        tree.column("size", width=80, anchor="e")
-        
-        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
-        hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
-        tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-        
-        tree.grid(row=0, column=0, sticky="nsew")
-        vsb.grid(row=0, column=1, sticky="ns")
-        hsb.grid(row=1, column=0, sticky="ew")
-        
-        tree_frame.grid_columnconfigure(0, weight=1)
-        tree_frame.grid_rowconfigure(0, weight=1)
-        
-        # Buttons frame at bottom
-        btn_frame = tk.Frame(main_frame, pady=10)
-        btn_frame.pack(fill=tk.X)
-        
-        outputs_dir = paths.outputs_dir()
-        
-        def refresh_list():
-            # Clear tree
-            for item in tree.get_children():
-                tree.delete(item)
-                
-            if not outputs_dir.exists():
+    def setup_global_crash_handler(self):
+        def handle_exception(exc_type, exc_value, exc_traceback):
+            if issubclass(exc_type, KeyboardInterrupt):
+                sys.__excepthook__(exc_type, exc_value, exc_traceback)
                 return
-                
-            files = []
-            for ext in ("*.docx", "*.pdf"):
-                for file_path in outputs_dir.glob(ext):
-                    try:
-                        stat = file_path.stat()
-                        modified_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-                        size_kb = max(1, int(stat.st_size / 1024))
-                        manual_type = "Module Manual" if "User_Manual" in file_path.name else "Final Manual"
-                        files.append((file_path, manual_type, modified_time, size_kb))
-                    except Exception as e:
-                        logger.warning(f"Error reading file stats for {file_path}: {e}")
-            
-            # Sort files by modified time descending (newest first)
-            files.sort(key=lambda x: x[2], reverse=True)
-            
-            for f_path, m_type, m_time, s_kb in files:
-                tree.insert("", tk.END, values=(f_path.name, m_type, m_time, f"{s_kb} KB"), tags=(str(f_path.resolve()),))
-                
-        def get_selected_path():
-            selected = tree.selection()
-            if not selected:
-                return None
-            tags = tree.item(selected[0], "tags")
-            if not tags:
-                return None
-            return Path(tags[0])
-            
-        def open_selected():
-            path = get_selected_path()
-            if path:
-                if path.exists():
-                    os.startfile(str(path))
-                else:
-                    messagebox.showerror("Error", f"File not found: {path}", parent=viewer)
-                    refresh_list()
-            else:
-                messagebox.showwarning("Warning", "Please select a manual to open.", parent=viewer)
-                
-        def delete_selected():
-            path = get_selected_path()
-            if path:
-                if messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete '{path.name}'?", parent=viewer):
-                    try:
-                        path.unlink()
-                        refresh_list()
-                    except Exception as e:
-                        messagebox.showerror("Error", f"Failed to delete file: {e}", parent=viewer)
-            else:
-                messagebox.showwarning("Warning", "Please select a manual to delete.", parent=viewer)
-                
-        # Double click to open
-        tree.bind("<Double-1>", lambda event: open_selected())
-        
-        # Add buttons
-        tk.Button(btn_frame, text="Open Manual", bg="#059669", fg="white", font=("Arial", 9, "bold"), width=15, command=open_selected).pack(side=tk.LEFT, padx=5)
-        tk.Button(btn_frame, text="Open Folder", bg="#EFF6FF", fg="#1E40AF", font=("Arial", 9, "bold"), width=15, command=lambda: os.startfile(str(outputs_dir))).pack(side=tk.LEFT, padx=5)
-        tk.Button(btn_frame, text="Delete", bg="#FEF2F2", fg="#991B1B", font=("Arial", 9, "bold"), width=10, command=delete_selected).pack(side=tk.LEFT, padx=5)
-        tk.Button(btn_frame, text="Refresh", bg="#F3F4F6", font=("Arial", 9), width=10, command=refresh_list).pack(side=tk.LEFT, padx=5)
-        tk.Button(btn_frame, text="Close", bg="#F3F4F6", font=("Arial", 9), width=10, command=viewer.destroy).pack(side=tk.RIGHT, padx=5)
-        
-        # Load initially
-        refresh_list()
+            logger.opt(exception=(exc_type, exc_value, exc_traceback)).error("Uncaught exception in launcher loop")
+            log_file = paths.logs_dir() / "docbot.log"
+            messagebox.showerror(
+                "Something went wrong",
+                f"An unexpected critical crash occurred.\n\n"
+                f"Details were saved to:\n{log_file.resolve()}\n\n"
+                f"Error: {exc_value}"
+            )
+        sys.excepthook = handle_exception
+        self.root.report_callback_exception = handle_exception
 
-
+    def show_welcome_wizard(self):
+        WelcomeWizard(self.root, self)
 
 def enable_windows_dpi_awareness():
     if sys.platform != "win32":
