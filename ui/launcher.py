@@ -33,6 +33,7 @@ from docbot.clients.profile import ClientProfile
 from manual_builder.manifest_loader import get_available_clients
 from docbot import paths
 from ui.settings_dialog import SettingsDialog
+from ui.widgets import ScrollableFrame, setup_dialog
 
 # -----------------------------------------------------------------------------
 # Single Instance and Process Helpers
@@ -86,6 +87,40 @@ def check_chromium_exists() -> bool:
     return len(chromes) > 0
 
 # -----------------------------------------------------------------------------
+# Geometry Persistence Helpers
+# -----------------------------------------------------------------------------
+
+DEFAULT_W, DEFAULT_H, MIN_W, MIN_H = 900, 640, 640, 480
+
+def restore_geometry(root, config):
+    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    w = min(DEFAULT_W, sw - 80)
+    h = min(DEFAULT_H, sh - 120)
+    x, y = (sw - w) // 2, max(20, (sh - h) // 3)
+    saved = getattr(config, "window_geometry", None)   # "WxH+X+Y"
+    if saved:
+        try:
+            size, xs, ys = saved.split("+")
+            w0, h0 = (int(v) for v in size.split("x"))
+            x0, y0 = int(xs), int(ys)
+            # clamp fully on-screen
+            w = min(w0, sw - 20)
+            h = min(h0, sh - 60)
+            x = max(0, min(x0, sw - w))
+            y = max(0, min(y0, sh - h))
+        except Exception:
+            pass
+    root.geometry(f"{w}x{h}+{x}+{y}")
+    root.minsize(MIN_W, MIN_H)
+
+def save_geometry_on_close(root, config):
+    def _on_close():
+        config.window_geometry = root.winfo_geometry()  # "WxH+X+Y"
+        save_config(config)
+        root.destroy()
+    root.protocol("WM_DELETE_WINDOW", _on_close)
+
+# -----------------------------------------------------------------------------
 # Reusable Progress Window
 # -----------------------------------------------------------------------------
 
@@ -93,9 +128,7 @@ class ProgressWindow(tk.Toplevel):
     def __init__(self, parent, title="Please Wait", cancel_callback=None):
         super().__init__(parent)
         self.title(title)
-        self.geometry("540x380")
-        self.resizable(False, False)
-        self.grab_set()
+        setup_dialog(self, parent, min_w=540, min_h=380, modal=False)
         
         self.cancel_callback = cancel_callback
         
@@ -155,9 +188,7 @@ class WelcomeWizard(tk.Toplevel):
         self.parent = parent
         self.launcher_ui = launcher_ui
         self.title("Welcome to DocBot v3")
-        self.geometry("560x440")
-        self.resizable(False, False)
-        self.grab_set()
+        setup_dialog(self, parent, min_w=560, min_h=440, modal=True)
         
         self.step = 1
         self.config = launcher_ui.config
@@ -398,9 +429,7 @@ class ClientSettingsDialog(tk.Toplevel):
         self.client_key = ui_manager.client_key
         
         self.title(f"Client Settings — Client: {self.client_key.upper()}")
-        self.geometry("640x780")
-        self.resizable(False, False)
-        self.grab_set()
+        setup_dialog(self, parent, min_w=640, min_h=780, modal=True)
 
         # Paths
         self.client_dir = paths.clients_dir() / self.client_key
@@ -459,8 +488,11 @@ class ClientSettingsDialog(tk.Toplevel):
         return {}
 
     def build_ui(self):
-        main_frame = tk.Frame(self, padx=15, pady=15)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        scroll = ScrollableFrame(self)
+        scroll.pack(fill=tk.BOTH, expand=True)
+        
+        main_frame = ttk.Frame(scroll.body)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
 
         tk.Label(main_frame, text=f"Client Settings Configuration — {self.client_key.upper()}", 
                  font=("Segoe UI", 12, "bold"), fg="#1E293B").pack(pady=(0, 15))
@@ -1523,10 +1555,31 @@ class LauncherUI:
 
 
 
+def enable_windows_dpi_awareness():
+    if sys.platform != "win32":
+        return
+    import ctypes
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)   # per-monitor v1
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+def apply_tk_scaling(root):
+    try:
+        dpi = root.winfo_fpixels("1i")     # actual pixels per inch
+        root.tk.call("tk", "scaling", dpi / 72.0)
+    except Exception:
+        pass
+
 def main():
+    enable_windows_dpi_awareness()
     from docbot.logging_setup import setup_logging
     setup_logging()
     root = tk.Tk()
+    apply_tk_scaling(root)
     app = LauncherUI(root)
     root.mainloop()
 

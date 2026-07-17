@@ -40,6 +40,7 @@ from docbot.models import SessionStore, Screen, Region, FieldDetail, Step, BBox
 from docbot.processing.generator import Generator
 from docbot.processing.annotate import render_annotations, _wrap_text
 from docbot.processing.crops import extract_crops
+from ui.widgets import setup_dialog
 
 HANDLE_PX = 7           # on-screen size of resize handles (not zoom-scaled)
 CALLOUT_W = 110         # on-screen callout bubble width for hit-testing
@@ -1157,9 +1158,7 @@ class ReviewSessionUI:
     def open_region_edit_dialog(self, r: Region):
         dialog = tk.Toplevel(self.root)
         dialog.title("Edit Region Details")
-        dialog.geometry("440x400")
-        dialog.grab_set()
-        dialog.transient(self.root)
+        setup_dialog(dialog, self.root, min_w=440, min_h=400, modal=True)
 
         pad = dict(padx=14, pady=7, sticky=tk.W)
         ttk.Label(dialog, text="Label:", font=("Segoe UI", 10)).grid(row=0, column=0, **pad)
@@ -1402,9 +1401,7 @@ class _RegionAddDialog:
         self.result = None
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("Add Region Details")
-        self.dialog.geometry("380x220")
-        self.dialog.resizable(False, False)
-        self.dialog.grab_set()
+        setup_dialog(self.dialog, parent, min_w=380, min_h=220, modal=True)
 
         pad = dict(padx=15, pady=8, sticky=tk.W)
         ttk.Label(self.dialog, text="Region Label:", font=("Segoe UI", 10)).grid(row=0, column=0, **pad)
@@ -1428,7 +1425,6 @@ class _RegionAddDialog:
         ttk.Button(btn_frame, text="Cancel", command=self.dialog.destroy).pack(side=tk.LEFT, padx=5)
 
         self.dialog.bind("<Return>", lambda e: self._on_save())
-        self.dialog.transient(parent)
         self.dialog.wait_window(self.dialog)
 
     def _on_save(self):
@@ -1446,8 +1442,7 @@ class _FieldEditDialog:
         self.result = None
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("Edit Field Descriptions")
-        self.dialog.geometry("450x320")
-        self.dialog.grab_set()
+        setup_dialog(self.dialog, parent, min_w=450, min_h=320, modal=True)
 
         ttk.Label(self.dialog, text="Field Display Name:").grid(row=0, column=0, sticky=tk.W, padx=10, pady=10)
         self.name_entry = ttk.Entry(self.dialog, width=40)
@@ -1469,7 +1464,6 @@ class _FieldEditDialog:
         ttk.Button(btn_frame, text="Apply Changes", command=self._apply).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Cancel", command=self.dialog.destroy).pack(side=tk.LEFT, padx=5)
 
-        self.dialog.transient(parent)
         parent.wait_window(self.dialog)
 
     def _apply(self):

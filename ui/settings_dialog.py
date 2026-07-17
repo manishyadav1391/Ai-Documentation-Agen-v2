@@ -7,14 +7,14 @@ import threading
 from docbot import paths
 from config import get_config, save_config, reload_config
 
+from ui.widgets import setup_dialog
+
 class SettingsDialog(tk.Toplevel):
     def __init__(self, parent, ui_manager):
         super().__init__(parent)
         self.ui_manager = ui_manager
         self.title("Settings & API Keys")
-        self.geometry("560x580")
-        self.resizable(False, False)
-        self.grab_set()
+        setup_dialog(self, parent, min_w=560, min_h=580, modal=True)
 
         # Load secrets
         self.secrets_path = paths.data_dir() / "secrets.yaml"

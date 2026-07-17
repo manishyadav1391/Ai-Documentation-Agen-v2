@@ -113,6 +113,8 @@ class Config(BaseModel):
     render: RenderConfig = Field(default_factory=RenderConfig)
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
     first_run_done: bool = False
+    window_geometry: Optional[str] = None
+    review_geometry: Optional[str] = None
 
     def get_current_client(self) -> str:
         """Return the active client identifier."""
