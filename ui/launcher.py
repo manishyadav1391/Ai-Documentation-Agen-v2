@@ -398,7 +398,7 @@ class ClientSettingsDialog(tk.Toplevel):
         self.client_key = ui_manager.client_key
         
         self.title(f"Client Settings — Client: {self.client_key.upper()}")
-        self.geometry("640x720")
+        self.geometry("640x780")
         self.resizable(False, False)
         self.grab_set()
 
@@ -437,7 +437,7 @@ class ClientSettingsDialog(tk.Toplevel):
         self.cover_data = self._load_yaml(self.cover_path, default_content_dir / "cover.yaml")
         
         # Sanity check dict structs
-        for key in ["fonts", "colors", "logo", "cover"]:
+        for key in ["fonts", "colors", "logo", "cover", "annotations"]:
             if key not in self.style_data or not isinstance(self.style_data[key], dict):
                 self.style_data[key] = {}
         
@@ -562,6 +562,27 @@ class ClientSettingsDialog(tk.Toplevel):
         self.cover_subtitle_entry = tk.Entry(t2, width=35)
         self.cover_subtitle_entry.insert(0, title_lines[1] if len(title_lines) > 1 else "")
         self.cover_subtitle_entry.grid(row=6, column=1, columnspan=2, sticky="w", padx=5, pady=5)
+
+        # Annotations branding settings
+        annot = self.style_data.get("annotations", {})
+        
+        tk.Label(t2, text="Callout Style:", font=("Segoe UI", 9)).grid(row=7, column=0, sticky="w", pady=5)
+        self.callout_style_combo = ttk.Combobox(t2, values=["Labeled bubble", "Numbered"], state="readonly", width=18)
+        current_style = annot.get("callout_style", "numbered")
+        self.callout_style_combo.set("Labeled bubble" if current_style == "bubble_label" else "Numbered")
+        self.callout_style_combo.grid(row=7, column=1, sticky="w", padx=5, pady=5)
+        
+        tk.Label(t2, text="Callout color:", font=("Segoe UI", 9)).grid(row=8, column=0, sticky="w", pady=5)
+        self.callout_color_entry = tk.Entry(t2, width=12)
+        cc_val = annot.get("callout_border", "E5484D")
+        self.callout_color_entry.insert(0, f"#{cc_val}" if not cc_val.startswith("#") else cc_val)
+        self.callout_color_entry.grid(row=8, column=1, sticky="w", padx=5, pady=5)
+        tk.Button(t2, text="Pick...", command=lambda: self.pick_color(self.callout_color_entry)).grid(row=8, column=2, sticky="w", padx=2, pady=5)
+        
+        tk.Label(t2, text="Pointer tail:", font=("Segoe UI", 9)).grid(row=9, column=0, sticky="w", pady=5)
+        self.callout_tail_var = tk.BooleanVar(value=bool(annot.get("callout_tail", True)))
+        self.callout_tail_chk = tk.Checkbutton(t2, variable=self.callout_tail_var)
+        self.callout_tail_chk.grid(row=9, column=1, sticky="w", padx=5, pady=5)
 
         # --- Tab 3: Writing Voice ---
         t3 = tk.Frame(self.notebook, padx=10, pady=10)
@@ -723,6 +744,32 @@ class ClientSettingsDialog(tk.Toplevel):
         self.style_data["colors"]["secondary"] = secondary
         self.style_data["logo"]["path"] = self.logo_entry.get().strip()
         self.style_data["fields"] = {"style": self.field_style_var.get()}
+
+        # Save annotations settings
+        cc_color = self.callout_color_entry.get().strip().replace("#", "")
+        if cc_color and len(cc_color) != 6:
+            messagebox.showerror("Validation Error", "Callout color must be a valid 6-character hex string.")
+            return
+            
+        if "annotations" not in self.style_data or not isinstance(self.style_data["annotations"], dict):
+            self.style_data["annotations"] = {}
+            
+        style_sel = self.callout_style_combo.get()
+        style_key = "bubble_label" if style_sel == "Labeled bubble" else "numbered"
+        self.style_data["annotations"]["callout_style"] = style_key
+        self.style_data["annotations"]["callout_border"] = cc_color
+        self.style_data["annotations"]["callout_text_color"] = cc_color
+        self.style_data["annotations"]["region_border"] = cc_color
+        self.style_data["annotations"]["callout_tail"] = self.callout_tail_var.get()
+        
+        # Default options when opting into bubble_label style
+        if style_key == "bubble_label":
+            if "leader_line" not in self.style_data["annotations"]:
+                self.style_data["annotations"]["leader_line"] = False
+            if "region_style" not in self.style_data["annotations"]:
+                self.style_data["annotations"]["region_style"] = "outline"
+            if "region_border_width" not in self.style_data["annotations"]:
+                self.style_data["annotations"]["region_border_width"] = 3
 
         # 4. Write cover page metadata (cover.yaml)
         self.resolved_content_dir.mkdir(parents=True, exist_ok=True)

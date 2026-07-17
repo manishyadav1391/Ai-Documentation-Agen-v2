@@ -108,3 +108,21 @@ footer:
   page_number_format: "Page {current} of {total}"
   page_number_color: muted
   center_text: ""
+
+annotations:
+  callout_style: numbered        # numbered (legacy) | bubble_label (new)
+  region_style: overlay          # overlay (legacy) | outline (new)
+  region_border: "E5484D"
+  region_border_width: 3
+  region_corner_radius: 6
+  callout_fill: "FFFFFF"
+  callout_border: "E5484D"
+  callout_border_width: 3
+  callout_text_color: "E5484D"
+  callout_font_size: 22
+  callout_corner_radius: 12
+  callout_padding_x: 14
+  callout_padding_y: 8
+  callout_tail: true             # pointer triangle on bubble edge
+  callout_tail_size: 16
+  leader_line: true              # legacy line; forced off for bubble_label

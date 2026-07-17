@@ -121,6 +121,156 @@ def _measure_callout(
     return w, h, lines
 
 
+def _hex_to_rgb(hex_str: str) -> Tuple[int, int, int]:
+    hex_str = str(hex_str).lstrip("#")
+    if len(hex_str) == 6:
+        try:
+            return int(hex_str[0:2], 16), int(hex_str[2:4], 16), int(hex_str[4:6], 16)
+        except ValueError:
+            pass
+    return (229, 72, 77)  # fallback to coral/red "E5484D"
+
+
+def _measure_bubble_callout(
+    label: str, font: ImageFont.FreeTypeFont, padding: List[int], max_chars: int = 24
+) -> Tuple[int, int, List[str]]:
+    lines = _wrap_text(label, max_chars)
+    lw, lh = [], []
+    for line in lines:
+        bb = font.getbbox(line)
+        lw.append(bb[2] - bb[0])
+        lh.append(bb[3] - bb[1])
+    px, py = padding
+    gap = 4
+    w = max(lw) + 2 * px
+    h = sum(lh) + gap * (len(lines) - 1) + 2 * py
+    return w, h, lines
+
+
+def _measure_bubble_label(
+    label: str, font: ImageFont.FreeTypeFont, max_w: int, padding: List[int]
+) -> Tuple[int, int, List[str]]:
+    """Wrap label to at most 2 lines; return (bubble_w, bubble_h, lines)."""
+    words = label.split()
+    if not words:
+        return 0, 0, []
+    lines, cur = [], ""
+    for w in words:
+        trial = f"{cur} {w}".strip()
+        if font.getlength(trial) <= max_w or not cur:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = w
+    lines.append(cur)
+    lines = lines[:2]  # hard cap 2 lines
+    
+    lw = [int(font.getlength(l)) for l in lines]
+    text_w = max(lw) if lw else 0
+    
+    lh = []
+    for line in lines:
+        bb = font.getbbox(line)
+        lh.append(bb[3] - bb[1])
+        
+    px, py = padding
+    gap = 4
+    w = text_w + 2 * px
+    h = sum(lh) + gap * (len(lines) - 1) + 2 * py
+    return w, h, lines
+
+
+def _draw_bubble_label_callout(
+    draw: ImageDraw.ImageDraw,
+    x: int, y: int, w: int, h: int,
+    lines: List[str],
+    font: ImageFont.FreeTypeFont,
+    fill_color: Tuple[int, int, int],
+    border_color: Tuple[int, int, int],
+    border_width: int,
+    corner_radius: int,
+    text_color: Tuple[int, int, int],
+) -> None:
+    draw.rounded_rectangle(
+        [(x, y), (x + w, y + h)],
+        radius=corner_radius,
+        fill=fill_color + (255,),
+        outline=border_color + (255,),
+        width=border_width,
+    )
+    lh_list = [font.getbbox(line)[3] - font.getbbox(line)[1] for line in lines]
+    total_h = sum(lh_list) + 4 * (len(lines) - 1)
+    ty = y + (h - total_h) // 2
+    for i, line in enumerate(lines):
+        bb = font.getbbox(line)
+        lw = bb[2] - bb[0]
+        tx = x + (w - lw) // 2
+        draw.text((tx, ty), line, fill=text_color + (255,), font=font)
+        ty += lh_list[i] + 4
+
+
+def _draw_bubble_tail(
+    draw: ImageDraw.ImageDraw,
+    x: int, y: int, w: int, h: int,
+    region: _Region,
+    border_color: Tuple[int, int, int],
+    fill_color: Tuple[int, int, int],
+    border_width: int,
+    tail_size: int,
+) -> None:
+    if _rects_overlap((x, y, x + w, y + h), (region.x, region.y, region.x + region.w, region.y + region.h), pad=0):
+        return
+        
+    bubble_cx = x + w / 2
+    bubble_cy = y + h / 2
+    region_cx = region.x + region.w / 2
+    region_cy = region.y + region.h / 2
+    
+    dx = region_cx - bubble_cx
+    dy = region_cy - bubble_cy
+    
+    if abs(dx) > abs(dy):
+        side = "right" if dx > 0 else "left"
+    else:
+        side = "bottom" if dy > 0 else "top"
+        
+    if side == "right":
+        p1 = (x + w, y + h // 2 - tail_size // 2)
+        p2 = (x + w, y + h // 2 + tail_size // 2)
+        p3 = (x + w + tail_size, y + h // 2)
+        
+        i1 = (x + w - border_width, y + h // 2 - tail_size // 2 + border_width * 2)
+        i2 = (x + w - border_width, y + h // 2 + tail_size // 2 - border_width * 2)
+        i3 = (x + w + tail_size - border_width * 2, y + h // 2)
+    elif side == "left":
+        p1 = (x, y + h // 2 - tail_size // 2)
+        p2 = (x, y + h // 2 + tail_size // 2)
+        p3 = (x - tail_size, y + h // 2)
+        
+        i1 = (x + border_width, y + h // 2 - tail_size // 2 + border_width * 2)
+        i2 = (x + border_width, y + h // 2 + tail_size // 2 - border_width * 2)
+        i3 = (x - tail_size + border_width * 2, y + h // 2)
+    elif side == "bottom":
+        p1 = (x + w // 2 - tail_size // 2, y + h)
+        p2 = (x + w // 2 + tail_size // 2, y + h)
+        p3 = (x + w // 2, y + h + tail_size)
+        
+        i1 = (x + w // 2 - tail_size // 2 + border_width * 2, y + h - border_width)
+        i2 = (x + w // 2 + tail_size // 2 - border_width * 2, y + h - border_width)
+        i3 = (x + w // 2, y + h + tail_size - border_width * 2)
+    else: # top
+        p1 = (x + w // 2 - tail_size // 2, y)
+        p2 = (x + w // 2 + tail_size // 2, y)
+        p3 = (x + w // 2, y - tail_size)
+        
+        i1 = (x + w // 2 - tail_size // 2 + border_width * 2, y + border_width)
+        i2 = (x + w // 2 + tail_size // 2 - border_width * 2, y + border_width)
+        i3 = (x + w // 2, y - tail_size + border_width * 2)
+        
+    draw.polygon([p1, p2, p3], fill=border_color + (255,))
+    draw.polygon([i1, i2, i3], fill=fill_color + (255,))
+
+
 def _rects_overlap(
     a: Tuple[int, int, int, int],
     b: Tuple[int, int, int, int],
@@ -334,9 +484,47 @@ def render_annotations(
     except Exception as e:
         logger.debug(f"[Annotate] Could not load session for scaling check: {e}")
 
+    if client_profile is None:
+        try:
+            from docbot.clients.profile import ClientProfile
+            client_profile = ClientProfile.load(cfg.current_client).data
+        except Exception:
+            client_profile = {}
+
     # Resolve style from client profile
     profile = client_profile or {}
-    annot_style = profile.get("style", {}).get("annotations", {})
+    from manual_builder.style_loader import StyleConfig
+    style_cfg = StyleConfig(raw=profile.get("style", {}))
+    annot_style = style_cfg.raw.get("annotations", {})
+    
+    callout_style = annot_style.get("callout_style", "numbered")
+    callout_fill = _hex_to_rgb(style_cfg.get_color(annot_style.get("callout_fill", "FFFFFF")))
+    callout_border = _hex_to_rgb(style_cfg.get_color(annot_style.get("callout_border", "E5484D")))
+    callout_border_width = int(annot_style.get("callout_border_width", 3))
+    callout_text_color = _hex_to_rgb(style_cfg.get_color(annot_style.get("callout_text_color", "E5484D")))
+    callout_font_size = int(annot_style.get("callout_font_size", 22))
+    callout_corner_radius = int(annot_style.get("callout_corner_radius", 12))
+    
+    pad_x = int(annot_style.get("callout_padding_x", annot_style.get("callout_padding", [14, 8])[0]))
+    pad_y = int(annot_style.get("callout_padding_y", annot_style.get("callout_padding", [14, 8])[1]))
+    callout_padding = [pad_x, pad_y]
+        
+    callout_tail = bool(annot_style.get("callout_tail", True))
+    callout_tail_size = int(annot_style.get("callout_tail_size", 16))
+    
+    if callout_style == "bubble_label":
+        leader_line = False
+    else:
+        leader_line = bool(annot_style.get("leader_line", True))
+    
+    default_region_style = "overlay" if callout_style == "numbered" else "outline"
+    region_style = annot_style.get("region_style", default_region_style)
+    
+    region_border_hex = annot_style.get("region_border", "E5484D")
+    region_border_color = _hex_to_rgb(style_cfg.get_color(region_border_hex))
+    region_border_width = int(annot_style.get("region_border_width", 3))
+    region_corner_radius = int(annot_style.get("region_corner_radius", 6))
+
     mode = annot_style.get("mode", "callouts")
     wrap_chars = int(annot_style.get("wrap_chars", 14))
     color_map = annot_style.get("colors", _DEFAULT_ROLE_COLORS)
@@ -344,6 +532,14 @@ def render_annotations(
     label_font_size = int(cfg.render.label_font_size * dpr)
     stroke_width = int(cfg.render.region_stroke_width * dpr)
     border_width = int(cfg.render.callout_border_width * dpr)
+
+    callout_border_width_scaled = int(callout_border_width * dpr)
+    callout_font_size_scaled = int(callout_font_size * dpr)
+    callout_corner_radius_scaled = int(callout_corner_radius * dpr)
+    callout_padding_scaled = [int(callout_padding[0] * dpr), int(callout_padding[1] * dpr)]
+    callout_tail_size_scaled = int(callout_tail_size * dpr)
+    region_border_width_scaled = int(region_border_width * dpr)
+    region_corner_radius_scaled = int(region_corner_radius * dpr)
 
     regions: list[_Region] = []
     for r in regions_data:
@@ -378,11 +574,29 @@ def render_annotations(
         palette = _DEFAULT_PALETTE.get(color_name, _DEFAULT_PALETTE["red"])
 
         # Draw region bounding box
-        draw.rectangle(
-            [(region.x, region.y), (region.x + region.w, region.y + region.h)],
-            outline=palette["stroke"],
-            width=stroke_width,
-        )
+        if region_style == "overlay":
+            fill_color = palette["stroke"] + (50,)
+            draw.rectangle(
+                [(region.x, region.y), (region.x + region.w, region.y + region.h)],
+                fill=fill_color,
+                outline=palette["stroke"] + (255,),
+                width=stroke_width,
+            )
+        else:
+            # region_style == "outline"
+            if callout_style == "bubble_label":
+                color_to_use = region_border_color + (255,)
+                width_to_use = region_border_width_scaled
+            else:
+                color_to_use = palette["stroke"] + (255,)
+                width_to_use = stroke_width
+                
+            draw.rounded_rectangle(
+                [(region.x, region.y), (region.x + region.w, region.y + region.h)],
+                radius=region_corner_radius_scaled,
+                outline=color_to_use,
+                width=width_to_use,
+            )
 
         if mode == "boxes_only":
             continue
@@ -396,7 +610,14 @@ def render_annotations(
             continue
 
         # mode == "callouts" (default)
-        cw, ch, lines = _measure_callout(region.label, font, wrap_chars)
+        if callout_style == "bubble_label":
+            text_val = region.label.strip() if (region.label and region.label.strip()) else str(i + 1)
+            bubble_font = _get_font(callout_font_size_scaled)
+            cw, ch, lines = _measure_bubble_label(text_val, bubble_font, int(260 * dpr), callout_padding_scaled)
+        else:
+            cw, ch, lines = _measure_callout(region.label, font, wrap_chars)
+            bubble_font = font
+
         if region.callout_x is not None and region.callout_y is not None:
             cx = int(region.callout_x - cw / 2)
             cy = int(region.callout_y - ch / 2)
@@ -405,9 +626,28 @@ def render_annotations(
                 region, cw, ch, img.width, img.height,
                 other_regions=regions, placed=placed, gap=50,
             )
-        placed.append((cx, cy, cx + cw, cy + ch))  # W27: register this callout
-        _draw_leader(draw, region, (cx, cy, cx + cw, cy + ch), palette["stroke"])
-        _draw_callout_bubble(draw, cx, cy, cw, ch, lines, font, palette, border_width)
+        placed.append((cx, cy, cx + cw, cy + ch))  # register this callout
+        
+        if leader_line:
+            _draw_leader(draw, region, (cx, cy, cx + cw, cy + ch), palette["stroke"])
+            
+        if callout_style == "bubble_label":
+            if callout_tail:
+                _draw_bubble_tail(
+                    draw, cx, cy, cw, ch, region,
+                    border_color=callout_border, fill_color=callout_fill,
+                    border_width=callout_border_width_scaled,
+                    tail_size=callout_tail_size_scaled
+                )
+            _draw_bubble_label_callout(
+                draw, cx, cy, cw, ch, lines, bubble_font,
+                fill_color=callout_fill, border_color=callout_border,
+                border_width=callout_border_width_scaled,
+                corner_radius=callout_corner_radius_scaled,
+                text_color=callout_text_color
+            )
+        else:
+            _draw_callout_bubble(draw, cx, cy, cw, ch, lines, font, palette, border_width)
 
     combined = Image.alpha_composite(img, overlay).convert("RGB")
 

@@ -38,7 +38,7 @@ from loguru import logger
 from config import get_config
 from docbot.models import SessionStore, Screen, Region, FieldDetail, Step, BBox
 from docbot.processing.generator import Generator
-from docbot.processing.annotate import render_annotations
+from docbot.processing.annotate import render_annotations, _wrap_text
 from docbot.processing.crops import extract_crops
 
 HANDLE_PX = 7           # on-screen size of resize handles (not zoom-scaled)
@@ -82,6 +82,16 @@ class ReviewSessionUI:
 
         self._undo_stack: list[list[Region]] = []
         self._pan_last = None
+
+        # Load style config
+        from docbot.clients.profile import ClientProfile
+        from manual_builder.style_loader import StyleConfig
+        cfg = get_config()
+        try:
+            profile = ClientProfile.load(cfg.current_client)
+            self.style_cfg = StyleConfig(raw=profile.style)
+        except Exception:
+            self.style_cfg = StyleConfig(raw={})
 
         self._setup_style()
         self._build_layout()
@@ -508,6 +518,31 @@ class ReviewSessionUI:
                 self.canvas.delete(item)
 
         z = self._zoom_level
+
+        def to_tk_color(hex_str: str) -> str:
+            hex_str = str(hex_str).lstrip("#")
+            if len(hex_str) == 6:
+                return f"#{hex_str}"
+            return "#EF4444"
+
+        annot_style = self.style_cfg.raw.get("annotations", {})
+        callout_style = annot_style.get("callout_style", "numbered")
+        callout_fill = annot_style.get("callout_fill", "FFFFFF")
+        callout_border = annot_style.get("callout_border", "E5484D")
+        callout_text_color = annot_style.get("callout_text_color", "E5484D")
+        callout_tail = bool(annot_style.get("callout_tail", True))
+        callout_tail_size = int(annot_style.get("callout_tail_size", 16))
+
+        if callout_style == "bubble_label":
+            leader_line = False
+        else:
+            leader_line = bool(annot_style.get("leader_line", True))
+
+        default_region = "overlay" if callout_style == "numbered" else "outline"
+        region_style = annot_style.get("region_style", default_region)
+        region_border = annot_style.get("region_border", "E5484D")
+        region_border_width = int(annot_style.get("region_border_width", 3))
+
         for r in self.screen.regions:
             if r.deleted:
                 continue
@@ -515,8 +550,18 @@ class ReviewSessionUI:
             x1, y1 = bb.x * z, bb.y * z
             x2, y2 = (bb.x + bb.width) * z, (bb.y + bb.height) * z
             is_active = (r.id == self.active_region_id)
-            color = "#3B82F6" if is_active else "#EF4444"
-            width = 3 if is_active else 2
+
+            if is_active:
+                color = "#3B82F6"
+                width = 3
+            else:
+                if callout_style == "bubble_label":
+                    color = to_tk_color(self.style_cfg.get_color(region_border))
+                    width = region_border_width
+                else:
+                    color = "#EF4444"
+                    width = 2
+
             self.canvas.create_rectangle(x1, y1, x2, y2, outline=color,
                                          width=width, tags=("box_overlay",))
 
@@ -524,21 +569,87 @@ class ReviewSessionUI:
             if self.callout_visible.get():
                 ax, ay = self._callout_anchor(r)
                 cx, cy = ax * z, ay * z
-                lbl = (r.label or r.role)[:20]
+
+                if callout_style == "bubble_label":
+                    text_val = r.label.strip() if (r.label and r.label.strip()) else f"{self.screen.regions.index(r) + 1}"
+                    lines = _wrap_text(text_val, max_chars=20)[:2]
+                    max_line_len = max(len(l) for l in lines) if lines else 0
+                    bubble_w = max_line_len * 7 + 24
+                    bubble_h = len(lines) * 15 + 12
+
+                    border_col = to_tk_color(self.style_cfg.get_color(callout_border))
+                    fill_col = to_tk_color(self.style_cfg.get_color(callout_fill))
+                    txt_col = to_tk_color(self.style_cfg.get_color(callout_text_color))
+                    border_w = 1
+                else:
+                    lines = [(r.label or r.role)[:20]]
+                    bubble_w = CALLOUT_W
+                    bubble_h = CALLOUT_H
+
+                    border_col = color
+                    fill_col = "#FEF3C7" if r.callout_x is not None else "#FFFFFF"
+                    txt_col = "#111827"
+                    border_w = 1
+
                 # Leader line from bubble to box top-center
-                self.canvas.create_line(cx, cy + CALLOUT_H / 2,
-                                        (x1 + x2) / 2, y1,
-                                        fill=color, width=1, dash=(3, 2),
-                                        tags=("callout_overlay",))
-                pinned = r.callout_x is not None
-                fill = "#FEF3C7" if pinned else "#FFFFFF"
-                self.canvas.create_rectangle(cx - CALLOUT_W / 2, cy - CALLOUT_H / 2,
-                                             cx + CALLOUT_W / 2, cy + CALLOUT_H / 2,
-                                             fill=fill, outline=color, width=1,
+                if leader_line:
+                    self.canvas.create_line(cx, cy + bubble_h / 2,
+                                            (x1 + x2) / 2, y1,
+                                            fill=color, width=1, dash=(3, 2),
+                                            tags=("callout_overlay",))
+
+                # Draw pointer tail if active
+                if callout_style == "bubble_label" and callout_tail:
+                    overlap = not (cx + bubble_w/2 < x1 or x2 < cx - bubble_w/2 or
+                                   cy + bubble_h/2 < y1 or y2 < cy - bubble_h/2)
+                    if not overlap:
+                        bubble_cx = cx
+                        bubble_cy = cy
+                        region_cx = (x1 + x2) / 2
+                        region_cy = (y1 + y2) / 2
+
+                        dx = region_cx - bubble_cx
+                        dy = region_cy - bubble_cy
+
+                        if abs(dx) > abs(dy):
+                            side = "right" if dx > 0 else "left"
+                        else:
+                            side = "bottom" if dy > 0 else "top"
+
+                        tail_sz = callout_tail_size
+                        if side == "right":
+                            p1 = (cx + bubble_w/2, cy - tail_sz/2)
+                            p2 = (cx + bubble_w/2, cy + tail_sz/2)
+                            p3 = (cx + bubble_w/2 + tail_sz, cy)
+                        elif side == "left":
+                            p1 = (cx - bubble_w/2, cy - tail_sz/2)
+                            p2 = (cx - bubble_w/2, cy + tail_sz/2)
+                            p3 = (cx - bubble_w/2 - tail_sz, cy)
+                        elif side == "bottom":
+                            p1 = (cx - tail_sz/2, cy + bubble_h/2)
+                            p2 = (cx + tail_sz/2, cy + bubble_h/2)
+                            p3 = (cx, cy + bubble_h/2 + tail_sz)
+                        else: # top
+                            p1 = (cx - tail_sz/2, cy - bubble_h/2)
+                            p2 = (cx + tail_sz/2, cy - bubble_h/2)
+                            p3 = (cx, cy - bubble_h/2 - tail_sz)
+
+                        self.canvas.create_polygon(p1[0], p1[1], p2[0], p2[1], p3[0], p3[1],
+                                                   fill=fill_col, outline=border_col, width=border_w,
+                                                   tags=("callout_overlay",))
+
+                # Draw callout bubble rectangle
+                self.canvas.create_rectangle(cx - bubble_w / 2, cy - bubble_h / 2,
+                                             cx + bubble_w / 2, cy + bubble_h / 2,
+                                             fill=fill_col, outline=border_col, width=border_w,
                                              tags=("callout_overlay",))
-                self.canvas.create_text(cx, cy, text=lbl, fill="#111827",
-                                        font=("Segoe UI", 8, "bold"),
-                                        tags=("callout_overlay",))
+
+                # Draw text lines
+                for idx, line in enumerate(lines):
+                    offset_y = (idx - (len(lines) - 1) / 2) * 15
+                    self.canvas.create_text(cx, cy + offset_y, text=line, fill=txt_col,
+                                            font=("Segoe UI", 8, "bold"),
+                                            tags=("callout_overlay",))
 
         # ── E2: resize handles on the active region ──
         r = self._get_active_region()
@@ -585,12 +696,25 @@ class ReviewSessionUI:
                     return "handle", active, name
 
         if self.callout_visible.get():
-            half_w = (CALLOUT_W / 2) / z
-            half_h = (CALLOUT_H / 2) / z
+            annot_style = self.style_cfg.raw.get("annotations", {})
+            callout_style = annot_style.get("callout_style", "numbered")
             for r in reversed(self.screen.regions):
                 if r.deleted:
                     continue
                 ax, ay = self._callout_anchor(r)
+                
+                if callout_style == "bubble_label":
+                    text_val = r.label.strip() if (r.label and r.label.strip()) else f"{self.screen.regions.index(r) + 1}"
+                    lines = _wrap_text(text_val, max_chars=20)[:2]
+                    max_line_len = max(len(l) for l in lines) if lines else 0
+                    bubble_w = max_line_len * 7 + 24
+                    bubble_h = len(lines) * 15 + 12
+                else:
+                    bubble_w = CALLOUT_W
+                    bubble_h = CALLOUT_H
+                    
+                half_w = (bubble_w / 2) / z
+                half_h = (bubble_h / 2) / z
                 if abs(ix - ax) <= half_w and abs(iy - ay) <= half_h:
                     return "callout", r, None
 
