@@ -11,6 +11,7 @@ class RecordingsView(ttk.Frame):
         super().__init__(parent)
         self.app = app
         self.session_mappings = []
+        self._selection_order = []       # Track click-order of tree item ids
         
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
@@ -50,7 +51,19 @@ class RecordingsView(ttk.Frame):
         self.vbar.grid(row=0, column=1, sticky="ns")
         
         self.tree.bind("<Double-1>", lambda e: self.open_review())
+        # Track selection order as user clicks
+        self.tree.bind("<<TreeviewSelect>>", self._on_selection_changed)
         
+    def _on_selection_changed(self, event=None):
+        """Maintain a click-ordered list of selected items."""
+        current_sel = set(self.tree.selection())
+        # Remove deselected items
+        self._selection_order = [s for s in self._selection_order if s in current_sel]
+        # Add newly selected items (in click order — they won't be in the list yet)
+        for s in self.tree.selection():
+            if s not in self._selection_order:
+                self._selection_order.append(s)
+
     def _build_buttons(self):
         ttk.Button(self.btn_frame, text="Refresh Sessions", command=self.refresh).pack(side=tk.LEFT, padx=4)
         ttk.Button(self.btn_frame, text="Open Review UI", command=self.open_review).pack(side=tk.LEFT, padx=4)
@@ -65,6 +78,7 @@ class RecordingsView(ttk.Frame):
         for item in self.tree.get_children():
             self.tree.delete(item)
         self.session_mappings = []
+        self._selection_order = []
         
         sessions_dir = paths.sessions_dir()
         if not sessions_dir.exists():
@@ -129,14 +143,56 @@ class RecordingsView(ttk.Frame):
             self.session_mappings.append(info["folder"])
             
     def get_selected_folders(self):
-        selections = self.tree.selection()
+        """Return selected folders in the user's click order."""
         folders = []
-        for sel in selections:
+        for sel in self._selection_order:
             idx = self.tree.index(sel)
             if 0 <= idx < len(self.session_mappings):
                 folders.append(self.session_mappings[idx])
         return folders
         
+    def _get_ordered_session_paths(self, folders):
+        """
+        Order session folders by module_number from session.json.
+        Falls back to the user's click order if module numbers are missing.
+        """
+        session_entries = []
+        for folder in folders:
+            session_dir = paths.sessions_dir() / folder
+            session_file = session_dir / "session.json"
+            mod_num = None
+            mod_name = folder
+            if session_file.exists():
+                try:
+                    with session_file.open("r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    raw_num = data.get("module_number")
+                    if raw_num is not None and str(raw_num).strip():
+                        try:
+                            mod_num = int(raw_num)
+                        except (ValueError, TypeError):
+                            # Could be a string like "1.2"; use float
+                            try:
+                                mod_num = float(raw_num)
+                            except (ValueError, TypeError):
+                                mod_num = None
+                    mod_name = data.get("module_name", "") or folder
+                except Exception:
+                    pass
+            session_entries.append({
+                "folder": folder,
+                "mod_num": mod_num,
+                "mod_name": mod_name,
+                "path": session_dir,
+            })
+
+        # Sort by module_number if all entries have one; otherwise keep click order
+        all_have_nums = all(e["mod_num"] is not None for e in session_entries)
+        if all_have_nums:
+            session_entries.sort(key=lambda e: e["mod_num"])
+
+        return session_entries
+
     def open_review(self):
         folders = self.get_selected_folders()
         if not folders:
@@ -173,5 +229,23 @@ class RecordingsView(ttk.Frame):
             messagebox.showwarning("Warning", "Please select one or more modules (sessions) to assemble.")
             return
         
-        session_paths = [paths.sessions_dir() / f for f in folders]
+        # Get ordered entries (sorted by module_number)
+        ordered_entries = self._get_ordered_session_paths(folders)
+
+        # Show confirmation with assembly order
+        order_lines = []
+        for i, entry in enumerate(ordered_entries):
+            num_str = f"Module {entry['mod_num']}" if entry["mod_num"] is not None else f"#{i+1}"
+            order_lines.append(f"  {num_str}: {entry['mod_name']}")
+        order_text = "\n".join(order_lines)
+
+        confirm = messagebox.askyesno(
+            "Confirm Assembly Order",
+            f"The manual will be assembled in this order:\n\n{order_text}\n\nProceed?"
+        )
+        if not confirm:
+            return
+
+        session_paths = [e["path"] for e in ordered_entries]
         self.app.assemble_master_manual(session_paths)
+
