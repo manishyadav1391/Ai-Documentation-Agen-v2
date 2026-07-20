@@ -22,8 +22,24 @@ def render_module(doc, session_dir, style, numbering):
     features = []
     screen_order = []
 
-    # 1. Load module metadata if it exists
-    if module_meta_path.exists():
+    # 1. Load module metadata from session.json (v3 primary source of truth)
+    session_json_path = session_dir / "session.json"
+    if session_json_path.exists():
+        try:
+            from docbot.models import SessionStore
+            session_model = SessionStore.load(session_dir)
+            module_name = session_model.module_name or ""
+            if session_model.module_number is not None:
+                module_num = session_model.module_number
+            intro = session_model.module_intro or ""
+            features = session_model.module_features or []
+            if session_model.screens:
+                screen_order = [s.index for s in session_model.screens]
+        except Exception as e:
+            print(f"[Warning] Failed to read session.json: {e}")
+
+    # Fallback to legacy module_meta.json if we still lack metadata (e.g. legacy tests)
+    if not module_name and module_meta_path.exists():
         try:
             with module_meta_path.open("r", encoding="utf-8") as f:
                 meta = json.load(f)

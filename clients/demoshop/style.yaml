@@ -5,13 +5,13 @@ page:
   margin_left_cm: 2.54
   margin_right_cm: 2.54
 fonts:
-  body_family: Arial
+  body_family: Segoe UI
   body_size_pt: 10.5
   heading_family: Segoe UI
   code_family: Consolas
 colors:
-  primary: '743303'
-  secondary: D90680
+  primary: 1B365D
+  secondary: D97706
   tertiary: C00000
   accent: 3B82F6
   table_header_bg: 1B365D
@@ -85,7 +85,7 @@ toc:
   max_depth: 3
   dot_leaders: true
 logo:
-  path: C:/Users/stadmin/Downloads/National-Emblem-of-India.jpg
+  path: ''
   header_left: true
   size_cm: 2
 footer:
@@ -95,11 +95,20 @@ footer:
   center_text: ''
 annotations:
   callout_style: numbered
-  callout_border: E5484D
-  callout_text_color: E5484D
+  region_style: outline
   region_border: E5484D
-  callout_tail: false
-  region_style: overlay
+  region_border_width: 3
+  region_corner_radius: 6
+  callout_fill: FFFFFF
+  callout_border: E5484D
+  callout_border_width: 3
+  callout_text_color: E5484D
+  callout_font_size: 22
+  callout_corner_radius: 12
+  callout_padding_x: 14
+  callout_padding_y: 8
+  callout_tail: true
+  callout_tail_size: 16
   leader_line: false
 fields:
   style: table

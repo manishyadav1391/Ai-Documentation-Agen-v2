@@ -1,8 +1,8 @@
-client_key: orangehrms
-client_display_name: OrangeHRMS Test
-system_name: OrangeHRM-Portal
-system_acronym: OHRM-P
-role_name: user
+client_key: hii
+client_display_name: HII
+system_name: '[System Name]'
+system_acronym: '[ACRONYM]'
+role_name: '[Role Name]'
 manual_title: User Manual
 version: '1.0'
 numbering_mode: module_prefixed

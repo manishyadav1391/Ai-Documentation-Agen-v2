@@ -1,6 +1,6 @@
 provider: ollama
 default_template: corporate
-current_client: orangehrms
+current_client: ncd
 content_dir: content
 clients_dir: clients
 styles_dir: styles
@@ -30,3 +30,5 @@ capture:
   mode: viewport
   scroll_capture: false
 first_run_done: true
+window_geometry: 1900x1009+0+0
+review_geometry: 1900x1009+0+0

@@ -567,9 +567,9 @@ class ReviewSessionUI:
         if callout_style == "bubble_label":
             leader_line = False
         else:
-            leader_line = bool(annot_style.get("leader_line", True))
+            leader_line = bool(annot_style.get("leader_line", False))
 
-        default_region = "overlay" if callout_style == "numbered" else "outline"
+        default_region = "outline"
         region_style = annot_style.get("region_style", default_region)
         region_border = annot_style.get("region_border", "E5484D")
         region_border_width = int(annot_style.get("region_border_width", 3))
@@ -629,11 +629,16 @@ class ReviewSessionUI:
                                             fill=color, width=1, dash=(3, 2),
                                             tags=("callout_overlay",))
 
+                # Draw callout bubble rectangle
+                self.canvas.create_rectangle(cx - bubble_w / 2, cy - bubble_h / 2,
+                                             cx + bubble_w / 2, cy + bubble_h / 2,
+                                             fill=fill_col, outline=border_col, width=border_w,
+                                             tags=("callout_overlay",))
+
                 # Draw pointer tail if active
                 if callout_style == "bubble_label" and callout_tail:
-                    overlap = not (cx + bubble_w/2 < x1 or x2 < cx - bubble_w/2 or
-                                   cy + bubble_h/2 < y1 or y2 < cy - bubble_h/2)
-                    if not overlap:
+                    inside = (x1 <= cx <= x2 and y1 <= cy <= y2)
+                    if not inside:
                         bubble_cx = cx
                         bubble_cy = cy
                         region_cx = (x1 + x2) / 2
@@ -647,33 +652,53 @@ class ReviewSessionUI:
                         else:
                             side = "bottom" if dy > 0 else "top"
 
-                        tail_sz = callout_tail_size
+                        tail_sz = callout_tail_size * z
                         if side == "right":
                             p1 = (cx + bubble_w/2, cy - tail_sz/2)
                             p2 = (cx + bubble_w/2, cy + tail_sz/2)
                             p3 = (cx + bubble_w/2 + tail_sz, cy)
+                            
+                            i1 = (cx + bubble_w/2 - border_w, cy - tail_sz/2 + border_w * 2)
+                            i2 = (cx + bubble_w/2 - border_w, cy + tail_sz/2 - border_w * 2)
+                            i3 = (cx + bubble_w/2 + tail_sz - border_w * 2, cy)
                         elif side == "left":
                             p1 = (cx - bubble_w/2, cy - tail_sz/2)
                             p2 = (cx - bubble_w/2, cy + tail_sz/2)
                             p3 = (cx - bubble_w/2 - tail_sz, cy)
+                            
+                            i1 = (cx - bubble_w/2 + border_w, cy - tail_sz/2 + border_w * 2)
+                            i2 = (cx - bubble_w/2 + border_w, cy + tail_sz/2 - border_w * 2)
+                            i3 = (cx - bubble_w/2 - tail_sz + border_w * 2, cy)
                         elif side == "bottom":
                             p1 = (cx - tail_sz/2, cy + bubble_h/2)
                             p2 = (cx + tail_sz/2, cy + bubble_h/2)
                             p3 = (cx, cy + bubble_h/2 + tail_sz)
+                            
+                            i1 = (cx - tail_sz/2 + border_w * 2, cy + bubble_h/2 - border_w)
+                            i2 = (cx + tail_sz/2 - border_w * 2, cy + bubble_h/2 - border_w)
+                            i3 = (cx, cy + bubble_h/2 + tail_sz - border_w * 2)
                         else: # top
                             p1 = (cx - tail_sz/2, cy - bubble_h/2)
                             p2 = (cx + tail_sz/2, cy - bubble_h/2)
                             p3 = (cx, cy - bubble_h/2 - tail_sz)
+                            
+                            i1 = (cx - tail_sz/2 + border_w * 2, cy - bubble_h/2 + border_w)
+                            i2 = (cx + tail_sz/2 - border_w * 2, cy - bubble_h/2 + border_w)
+                            i3 = (cx, cy - bubble_h/2 - tail_sz + border_w * 2)
 
+                        # Draw border-colored filled triangle
                         self.canvas.create_polygon(p1[0], p1[1], p2[0], p2[1], p3[0], p3[1],
-                                                   fill=fill_col, outline=border_col, width=border_w,
+                                                   fill=border_col, outline="",
                                                    tags=("callout_overlay",))
-
-                # Draw callout bubble rectangle
-                self.canvas.create_rectangle(cx - bubble_w / 2, cy - bubble_h / 2,
-                                             cx + bubble_w / 2, cy + bubble_h / 2,
-                                             fill=fill_col, outline=border_col, width=border_w,
-                                             tags=("callout_overlay",))
+                        # Draw fill-colored filled triangle to cover base border
+                        self.canvas.create_polygon(i1[0], i1[1], i2[0], i2[1], i3[0], i3[1],
+                                                   fill=fill_col, outline="",
+                                                   tags=("callout_overlay",))
+                        # Draw border lines on outer edges for crisp border flow
+                        self.canvas.create_line(p1[0], p1[1], p3[0], p3[1], fill=border_col, width=border_w,
+                                                tags=("callout_overlay",))
+                        self.canvas.create_line(p2[0], p2[1], p3[0], p3[1], fill=border_col, width=border_w,
+                                                tags=("callout_overlay",))
 
                 # Draw text lines
                 for idx, line in enumerate(lines):

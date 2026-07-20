@@ -1,23 +1,22 @@
 app_name: Enterprise Application
 tone_rules:
-  - Use formal, professional language.
-  - Write in third-person imperative ("Click", "Select", "Enter").
-  - Avoid contractions ("do not" not "don't").
-  - Keep sentences short and direct.
-  - Use active voice throughout.
-  - Field names should match the label shown on screen exactly.
-
+- Use formal, professional language.
+- Write in third-person imperative ("Click", "Select", "Enter").
+- Avoid contractions ("do not" not "don't").
+- Keep sentences short and direct.
+- Use active voice throughout.
+- Field names should match the label shown on screen exactly.
 examples:
   purpose:
-    - "The Login screen enables users to access the system securely using their credentials."
-    - "The Dashboard screen provides an overview of all active records and key system metrics."
+  - The Login screen enables users to access the system securely using their credentials.
+  - The Dashboard screen provides an overview of all active records and key system
+    metrics.
   step:
-    - "Click on the Login button to proceed."
-    - "Enter the username in the Username field."
-    - "The Home page will be displayed."
+  - Click on the Login button to proceed.
+  - Enter the username in the Username field.
+  - The Home page will be displayed.
   field:
-    - "Username — Enter the user's unique login identifier."
-    - "Password — Enter the account password (minimum 8 characters)."
-
-navigation_template: "Navigate to {screen_name} from the main menu."
-notes_block: ""
+  - Username — Enter the user's unique login identifier.
+  - Password — Enter the account password (minimum 8 characters).
+navigation_template: Navigate to {screen_name} from the main menu.
+notes_block: ''

@@ -62,9 +62,9 @@ tables:
   caption_style: italic
   caption_size_pt: 10
 bullets:
-  level_0_marker: "\u2022"
-  level_1_marker: "\u25E6"
-  level_2_marker: "\u25AA"
+  level_0_marker: •
+  level_1_marker: ◦
+  level_2_marker: ▪
   indent_cm: 0.5
 cover:
   layout: left_accent_bar
@@ -93,3 +93,13 @@ footer:
   page_number_format: Page {current} of {total}
   page_number_color: muted
   center_text: ''
+annotations:
+  callout_style: numbered
+  callout_border: E5484D
+  callout_text_color: E5484D
+  callout_tail: true
+  region_border: E5484D
+  region_style: outline
+  leader_line: false
+fields:
+  style: table

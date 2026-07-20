@@ -218,11 +218,15 @@ def _draw_bubble_tail(
     border_width: int,
     tail_size: int,
 ) -> None:
-    if _rects_overlap((x, y, x + w, y + h), (region.x, region.y, region.x + region.w, region.y + region.h), pad=0):
-        return
-        
     bubble_cx = x + w / 2
     bubble_cy = y + h / 2
+    
+    # Only skip tail if bubble center is inside the region box
+    inside = (region.x <= bubble_cx <= region.x + region.w and
+              region.y <= bubble_cy <= region.y + region.h)
+    if inside:
+        return
+        
     region_cx = region.x + region.w / 2
     region_cy = region.y + region.h / 2
     
@@ -515,9 +519,9 @@ def render_annotations(
     if callout_style == "bubble_label":
         leader_line = False
     else:
-        leader_line = bool(annot_style.get("leader_line", True))
+        leader_line = bool(annot_style.get("leader_line", False))
     
-    default_region_style = "overlay" if callout_style == "numbered" else "outline"
+    default_region_style = "outline"
     region_style = annot_style.get("region_style", default_region_style)
     
     region_border_hex = annot_style.get("region_border", "E5484D")
@@ -632,13 +636,6 @@ def render_annotations(
             _draw_leader(draw, region, (cx, cy, cx + cw, cy + ch), palette["stroke"])
             
         if callout_style == "bubble_label":
-            if callout_tail:
-                _draw_bubble_tail(
-                    draw, cx, cy, cw, ch, region,
-                    border_color=callout_border, fill_color=callout_fill,
-                    border_width=callout_border_width_scaled,
-                    tail_size=callout_tail_size_scaled
-                )
             _draw_bubble_label_callout(
                 draw, cx, cy, cw, ch, lines, bubble_font,
                 fill_color=callout_fill, border_color=callout_border,
@@ -646,6 +643,13 @@ def render_annotations(
                 corner_radius=callout_corner_radius_scaled,
                 text_color=callout_text_color
             )
+            if callout_tail:
+                _draw_bubble_tail(
+                    draw, cx, cy, cw, ch, region,
+                    border_color=callout_border, fill_color=callout_fill,
+                    border_width=callout_border_width_scaled,
+                    tail_size=callout_tail_size_scaled
+                )
         else:
             _draw_callout_bubble(draw, cx, cy, cw, ch, lines, font, palette, border_width)
 

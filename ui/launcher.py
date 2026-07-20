@@ -8,6 +8,7 @@ managing session history, compiling manuals, and automatically opening outputs.
 
 import sys
 import os
+import atexit
 import queue
 import threading
 import shutil
@@ -62,6 +63,16 @@ def pid_exists(pid: int) -> bool:
         except Exception:
             return False
 
+def remove_pid_file():
+    try:
+        lock_file = paths.data_dir() / "docbot.pid"
+        if lock_file.exists():
+            lock_file.unlink()
+    except Exception:
+        pass
+
+atexit.register(remove_pid_file)
+
 def check_single_instance() -> bool:
     lock_file = paths.data_dir() / "docbot.pid"
     if lock_file.exists():
@@ -115,11 +126,15 @@ def restore_geometry(root, config):
     root.geometry(f"{w}x{h}+{x}+{y}")
     root.minsize(MIN_W, MIN_H)
 
-def save_geometry_on_close(root, config):
+def save_geometry_on_close(root, config, launcher_instance=None):
     def _on_close():
+        if launcher_instance and hasattr(launcher_instance, "cancel_background_recording"):
+            launcher_instance.cancel_background_recording()
         config.window_geometry = root.winfo_geometry()  # "WxH+X+Y"
         save_config(config)
+        remove_pid_file()
         root.destroy()
+        sys.exit(0)
     root.protocol("WM_DELETE_WINDOW", _on_close)
 
 # -----------------------------------------------------------------------------
@@ -179,6 +194,13 @@ class ProgressWindow(tk.Toplevel):
         
     def set_status(self, text):
         self.status_lbl.config(text=text)
+
+    def set_progress(self, percent: int):
+        """Switch progress bar to determinate and set a specific percentage."""
+        if self.pb["mode"] != "determinate":
+            self.pb.stop()
+            self.pb.config(mode="determinate", maximum=100)
+        self.pb["value"] = percent
 
 # -----------------------------------------------------------------------------
 # Welcome Wizard
@@ -385,12 +407,7 @@ class WelcomeWizard(tk.Toplevel):
     def go_next(self):
         if self.step == 1:
             client = self.client_var.get()
-            self.config.current_client = client
-            save_config(self.config)
-            reload_config()
-            self.launcher_ui.client_key = client
-            self.launcher_ui.client_var.set(client)
-            self.launcher_ui.refresh_brand_summary()
+            self.launcher_ui.change_client(client)
             
             self.step += 1
             self.show_step()
@@ -616,6 +633,17 @@ class ClientSettingsDialog(tk.Toplevel):
         self.callout_tail_chk = ttk.Checkbutton(t2, variable=self.callout_tail_var)
         self.callout_tail_chk.grid(row=9, column=1, sticky="w", padx=5, pady=5)
 
+        ttk.Label(t2, text="Region style:").grid(row=10, column=0, sticky="w", pady=5)
+        self.region_style_combo = ttk.Combobox(t2, values=["Overlay (Translucent fill)", "Outline (No fill)"], state="readonly", width=22)
+        current_region = annot.get("region_style", "overlay")
+        self.region_style_combo.set("Outline (No fill)" if current_region == "outline" else "Overlay (Translucent fill)")
+        self.region_style_combo.grid(row=10, column=1, columnspan=2, sticky="w", padx=5, pady=5)
+
+        ttk.Label(t2, text="Connecting line:").grid(row=11, column=0, sticky="w", pady=5)
+        self.leader_line_var = tk.BooleanVar(value=bool(annot.get("leader_line", False)))
+        self.leader_line_chk = ttk.Checkbutton(t2, variable=self.leader_line_var)
+        self.leader_line_chk.grid(row=11, column=1, sticky="w", padx=5, pady=5)
+
         # --- Tab 3: Writing Voice ---
         t3 = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(t3, text="Voice (rules)")
@@ -793,6 +821,9 @@ class ClientSettingsDialog(tk.Toplevel):
         self.style_data["annotations"]["callout_text_color"] = cc_color
         self.style_data["annotations"]["region_border"] = cc_color
         self.style_data["annotations"]["callout_tail"] = self.callout_tail_var.get()
+        region_style_sel = self.region_style_combo.get()
+        self.style_data["annotations"]["region_style"] = "outline" if "Outline" in region_style_sel else "overlay"
+        self.style_data["annotations"]["leader_line"] = self.leader_line_var.get()
         
         # Default options when opting into bubble_label style
         if style_key == "bubble_label":
@@ -838,7 +869,7 @@ class ClientSettingsDialog(tk.Toplevel):
             with self.glossary_path.open("w", encoding="utf-8") as f:
                 yaml.safe_dump(glossary_output, f, sort_keys=False, allow_unicode=True)
 
-            self.ui_manager.refresh_brand_summary()
+            self.ui_manager.change_client(self.client_key)
             messagebox.showinfo("Success", "Client Settings saved successfully!")
             self.destroy()
         except Exception as e:
@@ -861,7 +892,7 @@ class LauncherUI:
         
         # Geometry Persistence
         restore_geometry(self.root, self.config)
-        save_geometry_on_close(self.root, self.config)
+        save_geometry_on_close(self.root, self.config, self)
         
         # Install global exception handlers
         self.setup_global_crash_handler()
@@ -1199,6 +1230,7 @@ class LauncherUI:
         self.recording_view = view_instance
         self.recording_cancel_event = threading.Event()
         self.recording_queue = queue.Queue()
+        self.recording_progress_win = None
         
         def run_thread():
             try:
@@ -1237,27 +1269,57 @@ class LauncherUI:
                     msg_type, data = self.recording_queue.get_nowait()
                     if msg_type == "progress":
                         self.update_status_bar(data)
+                        if data.startswith("Processing session data in:") or "PHASE 2" in data or "Pre-generating" in data:
+                            if not self.recording_progress_win:
+                                self.recording_progress_win = ProgressWindow(
+                                    self.root,
+                                    title="Processing & Generating Content",
+                                    cancel_callback=self.cancel_background_recording
+                                )
+                        if self.recording_progress_win:
+                            self.recording_progress_win.log(data)
+                            self.recording_progress_win.set_status(data)
+                            import re
+                            m = re.search(r"Screen (\d+) of (\d+)", data)
+                            if m:
+                                current = int(m.group(1))
+                                total = int(m.group(2))
+                                if total > 0:
+                                    percent = int(current / total * 100)
+                                    self.recording_progress_win.set_progress(percent)
                     elif msg_type == "screen_captured":
                         self.recording_view.update_count(data)
                         self.update_status_bar(f"Screens captured: {data}")
                     elif msg_type == "request_review":
+                        if self.recording_progress_win:
+                            self.recording_progress_win.destroy()
+                            self.recording_progress_win = None
                         session_dir_str, resume_evt = data
                         session_dir = Path(session_dir_str)
                         self.open_review_window(session_dir)
                         resume_evt.set()
                     elif msg_type == "done":
+                        if self.recording_progress_win:
+                            self.recording_progress_win.destroy()
+                            self.recording_progress_win = None
                         self.recording_view.show_setup()
                         messagebox.showinfo("Success", "Module recorded and processed successfully!")
                         self.update_status_bar("Ready.")
                         self.refresh_active_view()
                         return
                     elif msg_type == "cancelled":
+                        if self.recording_progress_win:
+                            self.recording_progress_win.destroy()
+                            self.recording_progress_win = None
                         self.recording_view.show_setup()
                         messagebox.showwarning("Cancelled", "Pipeline execution was cancelled.")
                         self.update_status_bar("Ready.")
                         self.refresh_active_view()
                         return
                     elif msg_type == "error":
+                        if self.recording_progress_win:
+                            self.recording_progress_win.destroy()
+                            self.recording_progress_win = None
                         self.recording_view.show_setup()
                         messagebox.showerror("Pipeline Error", f"An error occurred: {data}")
                         self.update_status_bar("Error: " + data)

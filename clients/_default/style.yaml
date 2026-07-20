@@ -111,7 +111,7 @@ footer:
 
 annotations:
   callout_style: numbered        # numbered (legacy) | bubble_label (new)
-  region_style: overlay          # overlay (legacy) | outline (new)
+  region_style: outline          # overlay (legacy) | outline (new)
   region_border: "E5484D"
   region_border_width: 3
   region_corner_radius: 6
@@ -125,4 +125,4 @@ annotations:
   callout_padding_y: 8
   callout_tail: true             # pointer triangle on bubble edge
   callout_tail_size: 16
-  leader_line: true              # legacy line; forced off for bubble_label
+  leader_line: false              # legacy line; forced off for bubble_label
