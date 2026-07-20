@@ -232,6 +232,7 @@ def detect_regions(elements: Sequence[Element]) -> list[Region]:
                                elements_contained=[name]))
 
     merged = _iou_merge(raw)
+    merged = _proximity_merge_nav(merged)
 
     # Assign stable ids
     for j, r in enumerate(merged):
@@ -369,3 +370,69 @@ def _infer_role(el: Element) -> str:
     if el.element_class == "static_label":
         return "section_heading"
     return "filter_form"
+
+
+def _proximity_merge_nav(regions: list[Region], gap_px: float = 40) -> list[Region]:
+    """
+    Merge navigation_bar regions that are spatially adjacent.
+
+    Sidebar links are thin horizontal bars stacked vertically with near-zero
+    IoU — the standard IoU merge never triggers for them.  This pass merges
+    any navigation_bar regions whose bounding boxes are within *gap_px* pixels
+    of each other (vertically or horizontally).
+    """
+    nav_regions = [r for r in regions if r.role == "navigation_bar"]
+    other_regions = [r for r in regions if r.role != "navigation_bar"]
+
+    if len(nav_regions) <= 1:
+        return regions
+
+    # Iteratively merge adjacent nav regions
+    changed = True
+    while changed:
+        changed = False
+        new_nav: list[Region] = []
+        used = [False] * len(nav_regions)
+
+        for i in range(len(nav_regions)):
+            if used[i]:
+                continue
+            base = nav_regions[i]
+            for j in range(i + 1, len(nav_regions)):
+                if used[j]:
+                    continue
+                other = nav_regions[j]
+                if _are_adjacent(base.bounding_box, other.bounding_box, gap_px):
+                    union = _union_bbox([base.bounding_box, other.bounding_box])
+                    all_el = list(dict.fromkeys(
+                        base.elements_contained + other.elements_contained
+                    ))
+                    base = Region(
+                        role="navigation_bar",
+                        bounding_box=union,
+                        elements_contained=all_el,
+                        label=base.label or other.label,
+                    )
+                    used[j] = True
+                    changed = True
+            new_nav.append(base)
+            used[i] = True
+
+        nav_regions = new_nav
+
+    return other_regions + nav_regions
+
+
+def _are_adjacent(a: BBox, b: BBox, gap: float) -> bool:
+    """Return True if bounding boxes a and b are within *gap* pixels of each other."""
+    a_x2 = a.x + a.width
+    a_y2 = a.y + a.height
+    b_x2 = b.x + b.width
+    b_y2 = b.y + b.height
+
+    # Check horizontal separation
+    h_gap = max(0, max(a.x, b.x) - min(a_x2, b_x2))
+    # Check vertical separation
+    v_gap = max(0, max(a.y, b.y) - min(a_y2, b_y2))
+
+    return h_gap <= gap and v_gap <= gap

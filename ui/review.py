@@ -622,6 +622,7 @@ class ReviewSessionUI:
                     txt_col = "#111827"
                     border_w = 1
 
+
                 # Leader line from bubble to box top-center
                 if leader_line:
                     self.canvas.create_line(cx, cy + bubble_h / 2,
@@ -629,14 +630,21 @@ class ReviewSessionUI:
                                             fill=color, width=1, dash=(3, 2),
                                             tags=("callout_overlay",))
 
+                # Clamp callout position to canvas bounds (prevent off-screen)
+                tail_margin = callout_tail_size * z if callout_tail else 0
+                canvas_max_w = self.orig_w * z
+                canvas_max_h = self.orig_h * z
+                cx = max(bubble_w / 2 + tail_margin, min(cx, canvas_max_w - bubble_w / 2 - tail_margin))
+                cy = max(bubble_h / 2 + tail_margin, min(cy, canvas_max_h - bubble_h / 2 - tail_margin))
+
                 # Draw callout bubble rectangle
                 self.canvas.create_rectangle(cx - bubble_w / 2, cy - bubble_h / 2,
                                              cx + bubble_w / 2, cy + bubble_h / 2,
                                              fill=fill_col, outline=border_col, width=border_w,
                                              tags=("callout_overlay",))
 
-                # Draw pointer tail if active
-                if callout_style == "bubble_label" and callout_tail:
+                # Draw pointer tail for ALL callout styles when enabled
+                if callout_tail:
                     inside = (x1 <= cx <= x2 and y1 <= cy <= y2)
                     if not inside:
                         bubble_cx = cx
@@ -706,6 +714,7 @@ class ReviewSessionUI:
                     self.canvas.create_text(cx, cy + offset_y, text=line, fill=txt_col,
                                             font=("Segoe UI", 8, "bold"),
                                             tags=("callout_overlay",))
+
 
         # ── E2: resize handles on the active region ──
         r = self._get_active_region()

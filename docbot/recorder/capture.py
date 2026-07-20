@@ -93,7 +93,14 @@ _DOM_EXTRACT_JS = """
   });
 
   // 2. Navigation links
-  document.querySelectorAll('nav a, header a, [role="navigation"] a, .sidebar a, .menu a, .navbar a, aside a').forEach((el, i) => {
+  const navSel = [
+    'nav a', 'header a', '[role="navigation"] a', '.sidebar a', '.menu a', '.navbar a', 'aside a',
+    '[class*="sidebar"] a', '[class*="sidenav"] a', '[class*="side-nav"] a', '[class*="nav-menu"] a',
+    '[id*="sidebar"] a', '[id*="sidenav"] a', 'ul.nav a', '.nav-item a', 'a.nav-link',
+    '[role="menubar"] a', '[role="tree"] a', '[role="treeitem"]',
+    '[class*="left-panel"] a', '[class*="leftpanel"] a', '[class*="left-menu"] a'
+  ].join(', ');
+  document.querySelectorAll(navSel).forEach((el, i) => {
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return;
     const rect = el.getBoundingClientRect();

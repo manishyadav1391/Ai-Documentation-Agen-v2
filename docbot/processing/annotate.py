@@ -295,8 +295,11 @@ def _place_callout(
     other_regions: List[_Region],
     placed: List[Tuple[int, int, int, int]],  # W27: track placed callout rects
     gap: int = 50,
+    tail_size: int = 0,
 ) -> Tuple[int, int]:
     """Overlap-aware callout placement (W27 fix: scores against placed callouts too)."""
+    # Account for tail extending beyond the callout box
+    margin = max(10, tail_size + 4)
     region_rect = (region.x, region.y, region.x + region.w, region.y + region.h)
     candidates = []
     tries = [region.callout_anchor, "right", "top", "bottom", "left"]
@@ -316,8 +319,8 @@ def _place_callout(
             cx, cy = region.x + region.w // 2 - callout_w // 2, region.y + region.h + gap
         else:
             continue
-        cx = max(10, min(cx, image_w - callout_w - 10))
-        cy = max(10, min(cy, image_h - callout_h - 10))
+        cx = max(margin, min(cx, image_w - callout_w - margin))
+        cy = max(margin, min(cy, image_h - callout_h - margin))
         callout_rect = (cx, cy, cx + callout_w, cy + callout_h)
 
         score = 0
@@ -629,7 +632,11 @@ def render_annotations(
             cx, cy = _place_callout(
                 region, cw, ch, img.width, img.height,
                 other_regions=regions, placed=placed, gap=50,
+                tail_size=callout_tail_size_scaled if callout_tail else 0,
             )
+        # Clamp manually-placed callouts to image bounds as well
+        cx = max(callout_tail_size_scaled + 4, min(cx, img.width - cw - callout_tail_size_scaled - 4))
+        cy = max(callout_tail_size_scaled + 4, min(cy, img.height - ch - callout_tail_size_scaled - 4))
         placed.append((cx, cy, cx + cw, cy + ch))  # register this callout
         
         if leader_line:
@@ -643,15 +650,24 @@ def render_annotations(
                 corner_radius=callout_corner_radius_scaled,
                 text_color=callout_text_color
             )
-            if callout_tail:
-                _draw_bubble_tail(
-                    draw, cx, cy, cw, ch, region,
-                    border_color=callout_border, fill_color=callout_fill,
-                    border_width=callout_border_width_scaled,
-                    tail_size=callout_tail_size_scaled
-                )
         else:
             _draw_callout_bubble(draw, cx, cy, cw, ch, lines, font, palette, border_width)
+
+        # Draw pointer tail for ALL callout styles when enabled
+        if callout_tail:
+            # Use style-driven colors for bubble_label, palette colors for numbered
+            if callout_style == "bubble_label":
+                tail_border = callout_border
+                tail_fill = callout_fill
+            else:
+                tail_border = palette["callout_border"]
+                tail_fill = palette["callout_bg"]
+            _draw_bubble_tail(
+                draw, cx, cy, cw, ch, region,
+                border_color=tail_border, fill_color=tail_fill,
+                border_width=callout_border_width_scaled,
+                tail_size=callout_tail_size_scaled
+            )
 
     combined = Image.alpha_composite(img, overlay).convert("RGB")
 
