@@ -3,7 +3,8 @@ Screen section renderer.
 
 Changes (Spec E, F):
 - E2: keep_with_next on image paragraph, keep_lines_together on caption.
-- E3: 6.2" width, scale by height for tall captures, 0.5pt gray border via single-cell table.
+- E3: 6.2" width, scale by height for tall captures, 0.5pt gray native picture border
+      (plain inline picture, no wrapper table, so it stays editable in Word).
 - E4: Removed empty spacer paragraphs between sections.
 - F1: Bullet field format: bold field name, en-dash, sentence-case description.
       Lead-in: "Enter the following details:"
@@ -35,15 +36,47 @@ def _is_placeholder(text: str) -> bool:
     return any(p in lower for p in _PLACEHOLDER_STRINGS)
 
 
-def _add_image_with_border(doc, img_path: Path, style) -> None:
+def _usable_width_inches(doc, fallback: float = 6.2) -> float:
+    """Text width of the last section (page width minus left/right margins)."""
+    try:
+        sec = doc.sections[-1]
+        return (sec.page_width - sec.left_margin - sec.right_margin) / 914400
+    except Exception:
+        return fallback
+
+
+def _figure_limit_inches(figures_cfg: dict, key: str, default: float) -> float:
+    """Read ``<key>_cm`` (style.yaml) with fallback to legacy ``<key>_inches``."""
+    if figures_cfg.get(f"{key}_cm") is not None:
+        return float(figures_cfg[f"{key}_cm"]) / 2.54
+    return float(figures_cfg.get(f"{key}_inches", default))
+
+
+def _add_picture_outline(inline_shape, color_hex: str, width_pt: float) -> None:
+    """Give an inline picture a native Word picture border (Picture Format > Picture Border)."""
+    from docx.oxml import OxmlElement
+
+    spPr = inline_shape._inline.graphic.graphicData.pic.spPr
+    ln = OxmlElement("a:ln")
+    ln.set("w", str(int(width_pt * 12700)))  # 12700 EMU per pt
+    fill = OxmlElement("a:solidFill")
+    clr = OxmlElement("a:srgbClr")
+    clr.set("val", color_hex.upper())
+    fill.append(clr)
+    ln.append(fill)
+    spPr.append(ln)
+
+
+def _add_image_with_border(doc, img_path: Path, style, alt_text: str = "") -> None:
     """
-    E3: Insert screenshot inside a single-cell borderless-except-outline table
-    so it gets a thin 0.5pt gray border around it.
-    Also sets keep_with_next on the wrapper paragraph.
+    E3: Insert screenshot as a plain inline picture in a centred paragraph so it
+    stays freely editable in Word (resize, crop, wrap, replace). The optional
+    thin border is a native picture outline rather than a wrapper table.
+    Also sets keep_with_next on the image paragraph.
     """
     figures_cfg = style.raw.get("figures", {})
-    max_w = figures_cfg.get("max_width_inches", 6.2)
-    max_h = figures_cfg.get("max_height_inches", 7.5)
+    max_w = min(_figure_limit_inches(figures_cfg, "max_width", 6.2), _usable_width_inches(doc))
+    max_h = _figure_limit_inches(figures_cfg, "max_height", 7.5)
 
     # Determine render dimensions preserving aspect ratio
     fit_w, fit_h = max_w, max_w  # fallback
@@ -69,57 +102,24 @@ def _add_image_with_border(doc, img_path: Path, style) -> None:
     except Exception:
         fit_w, fit_h = max_w, max_w / 1.5
 
-    border_enabled = figures_cfg.get("border_enabled", True)
-    border_color = figures_cfg.get("border_color", "AAAAAA").lstrip("#")
-    border_pt = figures_cfg.get("border_pt", 0.5)
-    border_sz = max(1, int(border_pt * 8))  # EMU: 1/8 pt per unit
+    p_img = doc.add_paragraph()
+    p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_img.paragraph_format.space_before = Pt(4)
+    p_img.paragraph_format.space_after = Pt(4)
+    p_img.paragraph_format.keep_with_next = True  # E2
+    run = p_img.add_run()
+    try:
+        shape = run.add_picture(str(img_path), width=Inches(fit_w), height=Inches(fit_h))
+    except Exception:
+        shape = run.add_picture(str(img_path), width=Inches(fit_w))
 
-    if border_enabled:
-        # Wrap in a 1×1 table that provides the thin border
-        from manual_builder.utils import set_table_borders, set_cell_margins, remove_table_borders
-        from docx.oxml import OxmlElement
-        from docx.oxml.ns import qn
+    if alt_text:
+        shape._inline.docPr.set("descr", alt_text)
 
-        border_table = doc.add_table(rows=1, cols=1)
-        border_table.autofit = False
-        border_table.columns[0].width = Inches(fit_w + 0.05)
-        remove_table_borders(border_table)
-
-        # Apply thin border to the single cell
-        cell = border_table.cell(0, 0)
-        set_cell_margins(cell, top=0, bottom=0, left=0, right=0)
-        tcPr = cell._tc.get_or_add_tcPr()
-        from docx.oxml import OxmlElement as _El
-        tcBorders = _El("w:tcBorders")
-        for side in ["top", "left", "bottom", "right"]:
-            b = _El(f"w:{side}")
-            b.set(qn("w:val"), "single")
-            b.set(qn("w:sz"), str(border_sz))
-            b.set(qn("w:space"), "0")
-            b.set(qn("w:color"), border_color)
-            tcBorders.append(b)
-        tcPr.append(tcBorders)
-
-        p_img = cell.paragraphs[0]
-        p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p_img.paragraph_format.space_before = Pt(4)
-        p_img.paragraph_format.space_after = Pt(4)
-        p_img.paragraph_format.keep_with_next = True  # E2
-
-        try:
-            p_img.add_run().add_picture(str(img_path), width=Inches(fit_w), height=Inches(fit_h))
-        except Exception:
-            p_img.add_run().add_picture(str(img_path), width=Inches(fit_w))
-    else:
-        p_img = doc.add_paragraph()
-        p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p_img.paragraph_format.space_before = Pt(4)
-        p_img.paragraph_format.space_after = Pt(4)
-        p_img.paragraph_format.keep_with_next = True  # E2
-        try:
-            p_img.add_run().add_picture(str(img_path), width=Inches(fit_w), height=Inches(fit_h))
-        except Exception:
-            p_img.add_run().add_picture(str(img_path), width=Inches(fit_w))
+    if figures_cfg.get("border_enabled", True):
+        border_color = str(figures_cfg.get("border_color", "AAAAAA")).lstrip("#")
+        border_pt = float(figures_cfg.get("border_width_pt", figures_cfg.get("border_pt", 0.5)))
+        _add_picture_outline(shape, border_color, border_pt)
 
 
 def render_screen(doc, screen_index, session_dir, content_data, screen_meta, style, numbering):
@@ -140,6 +140,14 @@ def render_screen(doc, screen_index, session_dir, content_data, screen_meta, sty
 
     screen_number_str = numbering.enter_section(level=2)
     add_styled_heading(doc, screen_name, level=2, style_config=style, numbering=screen_number_str)
+
+    layout = (style.raw.get("layout", {}) or {}).get("screen_layout", "writer")
+    if layout == "writer":
+        _render_writer_body(doc, screen_index, session_dir, content_data, screen_meta,
+                            style, numbering, screen_name, module_num)
+        if (style.raw.get("layout", {}) or {}).get("page_break_per_screen", False):
+            doc.add_page_break()
+        return
 
     # 2. Screen Purpose (F5: skip placeholder)
     purpose = content_data.get("purpose")
@@ -184,59 +192,8 @@ def render_screen(doc, screen_index, session_dir, content_data, screen_meta, sty
         )
 
     # 5. Screen Figures (Screenshots)
-    figures_list = content_data.get("figures", [])
-    if not figures_list:
-        img_name = f"screen_{screen_index}_annotated.png"
-        img_path = session_dir / img_name
-        if not img_path.exists():
-            img_path = session_dir / f"screen_{screen_index}.png"
-        if img_path.exists():
-            figures_list = [{"index": 1, "path": img_path.name, "caption_note": ""}]
-
-    figure_prefix = style.numbering.get("figure_prefix", "Figure")
-
-    for fig_entry in figures_list:
-        fig_rel_path = fig_entry.get("path", "")
-        # Prefer annotated image when it exists
-        if fig_entry.get("index") == 1 or (fig_rel_path and fig_rel_path.startswith("screen_")):
-            annotated_name = f"screen_{screen_index}_annotated.png"
-            if (session_dir / annotated_name).exists():
-                fig_rel_path = annotated_name
-
-        fig_path = session_dir / fig_rel_path
-        if not fig_path.exists():
-            continue
-
-        # E2/E3: image with optional border; keep_with_next set inside helper
-        _add_image_with_border(doc, fig_path, style)
-
-        # F4: caption format "Figure N: Screen Name — caption_note"
-        caption_note = fig_entry.get("caption_note", "")
-        if caption_note:
-            fig_caption = f"{screen_name} \u2014 {caption_note}"
-        else:
-            fig_caption = screen_name
-
-        fig_number_str = numbering.next_figure(module_num)
-
-        # E2: Caption paragraph gets keep_lines_together
-        # add_caption handles paragraph creation — we patch it after
-        add_caption(
-            doc,
-            prefix=figure_prefix,
-            caption_text=fig_caption,
-            style_cfg=style,
-            seq_name="Figure",
-            module_num=module_num if numbering.mode == "module_prefixed" else None,
-            font_size_pt=style.raw.get("figures", {}).get("caption_size_pt", 9),
-        )
-        # Apply keep_lines_together to the just-added caption paragraph (E2)
-        try:
-            doc.paragraphs[-1].paragraph_format.keep_lines_together = True
-        except Exception:
-            pass
-
-        numbering.register_figure(fig_number_str, fig_caption)
+    _render_figures(doc, screen_index, session_dir, content_data, style, numbering,
+                    screen_name, module_num)
 
     # 6. Field Details (Bullets — spec F1)
     field_details = content_data.get("field_details", [])
@@ -386,6 +343,226 @@ def render_screen(doc, screen_index, session_dir, content_data, screen_meta, sty
     if page_break:
         doc.add_page_break()
 
+
+
+def _render_figures(doc, screen_index, session_dir, content_data, style, numbering,
+                    screen_name, module_num) -> None:
+    """Screenshot(s) + numbered captions for one screen (shared by both layouts)."""
+    figures_list = content_data.get("figures", [])
+    if not figures_list:
+        img_name = f"screen_{screen_index}_annotated.png"
+        img_path = session_dir / img_name
+        if not img_path.exists():
+            img_path = session_dir / f"screen_{screen_index}.png"
+        if img_path.exists():
+            figures_list = [{"index": 1, "path": img_path.name, "caption_note": ""}]
+
+    figure_prefix = style.numbering.get("figure_prefix", "Figure")
+
+    for fig_entry in figures_list:
+        fig_rel_path = fig_entry.get("path", "")
+        # Prefer annotated image when it exists
+        if fig_entry.get("index") == 1 or (fig_rel_path and fig_rel_path.startswith("screen_")):
+            annotated_name = f"screen_{screen_index}_annotated.png"
+            if (session_dir / annotated_name).exists():
+                fig_rel_path = annotated_name
+
+        fig_path = session_dir / fig_rel_path
+        if not fig_path.exists():
+            continue
+
+        # F4: caption format "Figure N: Screen Name — caption_note"
+        caption_note = fig_entry.get("caption_note", "")
+        if caption_note:
+            fig_caption = f"{screen_name} \u2014 {caption_note}"
+        else:
+            fig_caption = screen_name
+
+        # E2/E3: image with optional border; keep_with_next set inside helper
+        _add_image_with_border(doc, fig_path, style, alt_text=fig_caption)
+
+        fig_number_str = numbering.next_figure(module_num)
+
+        # E2: Caption paragraph gets keep_lines_together
+        # add_caption handles paragraph creation — we patch it after
+        add_caption(
+            doc,
+            prefix=figure_prefix,
+            caption_text=fig_caption,
+            style_cfg=style,
+            seq_name="Figure",
+            module_num=module_num if numbering.mode == "module_prefixed" else None,
+            font_size_pt=style.raw.get("figures", {}).get("caption_size_pt", 9),
+        )
+        # Apply keep_lines_together to the just-added caption paragraph (E2)
+        try:
+            doc.paragraphs[-1].paragraph_format.keep_lines_together = True
+        except Exception:
+            pass
+
+        numbering.register_figure(fig_number_str, fig_caption)
+
+
+
+# ---------------------------------------------------------------------------
+# Writer layout (house style of the reference manuals)
+# ---------------------------------------------------------------------------
+
+_GENERIC_NAV_PREFIXES = ("navigate to ", "select ")
+
+
+def _clean_note(note: str) -> str:
+    text = (note or "").strip()
+    while text.lower().startswith("note:"):
+        text = text[5:].strip()
+    return text
+
+
+def _clean_label(name: str) -> str:
+    """Safety net for on-screen labels: drop placeholder ellipses, de-shout CAPS headers."""
+    name = (name or "").strip()
+    if name.endswith(("...", "…")):
+        name = name.rstrip(".…").strip()
+    words = name.split()
+    if words and name.isupper() and any(len(w) > 3 for w in words):
+        # "ASSIGNED USER TYPE" -> "Assigned User Type"; keep short acronyms (ID, URL, OTP)
+        name = " ".join(w if len(w.strip(".")) <= 3 else w.capitalize() for w in words)
+    return name
+
+
+def _sentence(text: str) -> str:
+    text = (text or "").strip()
+    if text and text[-1] not in ".!?:":
+        text += "."
+    return text
+
+
+def _writer_intro(content_data: dict, screen_meta: dict) -> str:
+    """Opening paragraph: AI intro, else navigation + purpose (no generic filler)."""
+    intro = (content_data.get("intro") or "").strip()
+    if intro and not _is_placeholder(intro):
+        return intro
+    parts = []
+    nav = (content_data.get("navigation_instructions") or "").strip()
+    if nav and not nav.lower().startswith(_GENERIC_NAV_PREFIXES) and not _is_placeholder(nav):
+        parts.append(_sentence(nav))
+    purpose = (content_data.get("purpose") or "").strip()
+    if purpose and not _is_placeholder(purpose):
+        parts.append(_sentence(purpose))
+    return " ".join(parts)
+
+
+def _writer_sections(content_data: dict) -> list:
+    """AI sections, or a single 'Fields' section built from legacy field details."""
+    sections = content_data.get("sections") or []
+    if sections:
+        return sections
+    items = []
+    for f in content_data.get("field_details", []) or []:
+        name = f.get("field_name", "")
+        name = name.split(" -> ")[-1] if " -> " in name else name
+        desc = f.get("utility", "")
+        if name and desc and not _is_placeholder(desc):
+            items.append({"name": name, "description": desc, "control_type": ""})
+    return [{"title": "Fields", "lead_in": "", "items": items}] if items else []
+
+
+def _run(paragraph, text, style, bold=False, color_key="body_text"):
+    r = paragraph.add_run(text)
+    r.font.name = style.body_font
+    r.font.size = Pt(style.body_size)
+    r.font.bold = bold
+    r.font.color.rgb = hex_to_rgb(style.get_color(color_key))
+    return r
+
+
+def _render_writer_body(doc, screen_index, session_dir, content_data, screen_meta,
+                        style, numbering, screen_name, module_num) -> None:
+    fields_cfg = style.raw.get("fields", {}) or {}
+    show_type = fields_cfg.get("show_control_type", True)
+
+    # 1. Opening paragraph (navigation + what the page allows)
+    intro = _writer_intro(content_data, screen_meta)
+    if intro:
+        add_body_paragraph(doc, intro, font_name=style.body_font, size_pt=style.body_size,
+                           color_hex=style.get_color("body_text"))
+
+    # 2. Screenshot + caption
+    _render_figures(doc, screen_index, session_dir, content_data, style, numbering,
+                    screen_name, module_num)
+
+    # 3. Grouped element lists: "Name – Description. (Type)"
+    for sec in _writer_sections(content_data):
+        items = [it for it in sec.get("items", []) if (it.get("name") or "").strip()]
+        if not items:
+            continue
+        title = (sec.get("title") or "").strip()
+        # A one-item section named like its item ("Pagination") needs no sub-heading
+        if len(items) == 1 and _clean_label(items[0]["name"]).lower() == title.lower():
+            title = ""
+        if title:
+            p_t = doc.add_paragraph()
+            p_t.paragraph_format.space_before = Pt(8)
+            p_t.paragraph_format.space_after = Pt(2)
+            p_t.paragraph_format.keep_with_next = True
+            _run(p_t, title, style, bold=True, color_key="secondary")
+        lead_in = (sec.get("lead_in") or "").strip()
+        if lead_in:
+            p_l = doc.add_paragraph()
+            p_l.paragraph_format.space_after = Pt(2)
+            p_l.paragraph_format.keep_with_next = True
+            _run(p_l, lead_in, style)
+        for it in items:
+            p_b = doc.add_paragraph(style="List Bullet")
+            p_b.paragraph_format.space_after = Pt(2)
+            _run(p_b, _clean_label(it["name"]), style, bold=True)
+            desc = _sentence(it.get("description", ""))
+            if desc:
+                _run(p_b, " \u2013 " + desc, style)
+            ctype = (it.get("control_type") or "").strip()
+            if show_type and ctype:
+                _run(p_b, f" ({ctype})", style)
+
+    # 4. Procedure — only when the AI found a real task flow
+    steps = [st for st in content_data.get("steps", []) or [] if (st.get("text") or "").strip()]
+    if steps:
+        p_h = doc.add_paragraph()
+        p_h.paragraph_format.space_before = Pt(8)
+        p_h.paragraph_format.space_after = Pt(2)
+        p_h.paragraph_format.keep_with_next = True
+        _run(p_h, fields_cfg.get("procedure_lead_in", "Perform the following steps:"), style,
+             bold=True, color_key="secondary")
+        n = 0
+        for st in steps:
+            p_s = doc.add_paragraph()
+            p_s.paragraph_format.space_after = Pt(2)
+            p_s.paragraph_format.left_indent = Inches(0.35)
+            if st.get("kind") == "result":
+                _add_step_text_with_bold(p_s, _sentence(st["text"]), style)
+            else:
+                n += 1
+                p_s.paragraph_format.first_line_indent = Inches(-0.25)
+                _run(p_s, f"{n}.\t", style)
+                _add_step_text_with_bold(p_s, _sentence(st["text"]), style)
+            crop_rel = st.get("crop_path")
+            crop_file = session_dir / crop_rel if crop_rel else None
+            if crop_file and crop_file.exists():
+                try:
+                    p_s.add_run(" ").add_picture(str(crop_file), height=Inches(0.22))
+                except Exception:
+                    pass
+
+    # 5. Notes
+    notes = content_data.get("notes") or (content_data.get("screen_documentation", {}) or {}).get("notes", [])
+    for note in notes or []:
+        text = _clean_note(note)
+        if not text or _is_placeholder(text):
+            continue
+        p_n = doc.add_paragraph()
+        p_n.paragraph_format.space_before = Pt(6)
+        p_n.paragraph_format.space_after = Pt(4)
+        _run(p_n, "Note: ", style, bold=True, color_key="tertiary")
+        _run(p_n, _sentence(text), style)
 
 def _add_step_text_with_bold(paragraph, text: str, style) -> None:
     """

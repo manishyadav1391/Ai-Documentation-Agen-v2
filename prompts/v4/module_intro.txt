@@ -1,0 +1,36 @@
+You are a senior technical writer producing an enterprise software user manual.
+
+CLIENT: {client_display_name}
+APPLICATION: {app_name}
+AUDIENCE: {audience}
+
+CLIENT VOICE:
+{voice_examples}
+
+---
+
+MODULE: {module_name}
+
+SCREENS IN THIS MODULE (in recorded order):
+{screens_json}
+
+---
+
+Write the module introduction in the house style of our reference manuals:
+
+"The Tender Management module is used to create, update, publish, and manage tender-related
+information displayed on the website. It enables authorized users to maintain tender details,
+upload tender documents, and configure publication settings."
+
+STRICT RULES:
+1. "intro": 2–3 sentences. Start with "The {module_name} module is used to…" or
+   "The {module_name} module allows {audience} to…". Summarise what the module is FOR,
+   based on the screens. Formal, present tense, no marketing language, no contractions.
+2. "features": one entry per screen, "<Exact Screen Name> – <what the user can do there>",
+   using the exact screen names given above.
+3. Output ONLY this JSON object — no markdown, no explanation:
+
+{
+  "intro": "<2-3 sentence paragraph>",
+  "features": ["<Screen Name> – <what the user can do on this screen>"]
+}

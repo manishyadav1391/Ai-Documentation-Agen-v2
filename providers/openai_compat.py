@@ -21,10 +21,13 @@ from .base import Provider
 class OpenAICompatProvider(Provider):
     """HTTP provider for OpenAI-compatible LLM endpoints."""
 
+    # Key into cfg.providers.* — subclasses (e.g. OpenRouter) override this
+    config_key = "openai_compat"
+
     def __init__(self) -> None:
         cfg = get_config()
-        self.provider_cfg = cfg.providers.openai_compat
-        self.api_key = cfg.get_api_key("openai_compat")
+        self.provider_cfg = getattr(cfg.providers, self.config_key)
+        self.api_key = cfg.get_api_key(self.config_key)
         self.model = self.provider_cfg.model
         self.base_url = self.provider_cfg.base_url
         self.max_tokens = self.provider_cfg.max_tokens
@@ -32,6 +35,7 @@ class OpenAICompatProvider(Provider):
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        headers.update(self._extra_headers())
 
         self.client = httpx.Client(
             base_url=self.base_url,
@@ -39,9 +43,13 @@ class OpenAICompatProvider(Provider):
             timeout=httpx.Timeout(120.0, connect=15.0),
         )
 
+    def _extra_headers(self) -> dict[str, str]:
+        """Provider-specific HTTP headers added to every request."""
+        return {}
+
     @property
     def name(self) -> str:
-        return "openai_compat"
+        return self.config_key
 
     def is_available(self) -> bool:
         return bool(self.base_url and self.api_key)
@@ -103,7 +111,11 @@ class OpenAICompatProvider(Provider):
                         )
                         time.sleep(wait)
                         continue
-                resp.raise_for_status()
+                if resp.is_error:
+                    raise RuntimeError(
+                        f"[{self.name}] HTTP {resp.status_code} from {self.base_url}: "
+                        f"{resp.text[:500]}"
+                    )
                 data = resp.json()
                 return data["choices"][0]["message"]["content"]
             except httpx.TimeoutException as exc:

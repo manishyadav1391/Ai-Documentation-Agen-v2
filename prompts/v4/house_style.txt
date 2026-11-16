@@ -1,0 +1,98 @@
+HOUSE STYLE — how our technical writers document a screen
+(derived from the reviewed reference manuals; follow it exactly)
+
+1. OPENING PARAGRAPH ("intro", 2–4 sentences)
+   - Sentence 1 tells the reader how to reach the screen, using the real menu path
+     with the arrow character "→" and where the menu is:
+       "Click Quick Management → Tender Management from the left navigation panel to access the module."
+       "Click Add Tender from the Tender Management page. The Tender Management form opens, allowing the user to enter tender details."
+       "From the Users page, click the Edit option available under the Action column against the required user."
+   - Then describe what the page displays / allows, naming the audience:
+       "The Tender Management page displays all tender records available in the system. Users can search for existing tenders, create new tender records, edit existing records, or delete records."
+   - For a list page say "displays"; for a form say "allows the user to enter/update…"; for a dashboard say "provides an overview of…".
+   - NEVER write "Navigate to X from the main menu." and NEVER write generic filler.
+
+2. ELEMENT LISTS ("sections")
+   Group every visible control into sections, in the order they appear on screen (top to bottom, left to right).
+   Use these section titles where they apply:
+     - "Search Filters"          → filter inputs + Search / Reset buttons above a list
+     - "<Page name> Table"       → table columns; lead_in: "The <Page name> table contains the following details:"
+     - "<Group name>"            → for forms, use the visible group/card/fieldset heading (e.g. "SEO Information", "Display Settings")
+     - "Buttons"                 → page-level buttons (Save, Update, Back, Cancel, Add New, Export to Excel)
+     - "Action Buttons"          → per-row icons/actions in a table (Edit, View, Delete)
+     - "<Page name> Components"  → for dashboards: tiles, panels, widgets
+     - "Tabs"                    → tab buttons that switch the view (e.g. Active / Draft / Deleted)
+   A form without visible groups gets ONE section titled "Form Fields" with lead_in "Enter the following details:".
+
+   Naming rules for items:
+     - Labels shown in CAPITALS by the page styling (table headers like "VERSION") are written in
+       Title Case ("Version"). Keep real acronyms (ID, URL, OTP) in capitals.
+     - Inputs without a visible label: name them by function ("Search", "Message"), never by the
+       placeholder text ("Search workflows...").
+     - Never put live data into a name (counts, record values, dates): "Department Access", not
+       "Department Access — 20 depts · 9577 offices".
+     - Pagination controls (First, Previous, Next, Last, page numbers, "N per page") become ONE item:
+       "Pagination – Use the First, Previous, Next, and Last buttons to move between pages, and select the
+       number of records to be displayed per page."
+     - View switches (Grid View / List View, Table / Timeline) become ONE item when they belong together.
+     - Never list individual data records (table rows, cards, tiles showing records). Describe the
+       repeating element ONCE by what it shows: "Workflow Card – Displays the workflow name, version,
+       status, and the available actions for each workflow. (Display)".
+
+   Each item is written as:  name – description. (control_type)
+     - name: the label EXACTLY as shown on screen (keep "?" or "*" meaning, drop decorative "*").
+     - description: starts with a verb, one or two sentences, explains purpose and any rule:
+         input      → "Enter the registered email address of the user."
+         dropdown   → "Select the language in which the records should be displayed."
+         checkbox   → "Select or clear this option to enable or disable comments."
+         display    → "Displays the date on which the tender is published."
+         button     → "Click to save the newly created record."
+         link/menu  → "Click to open the <X> page."
+         edit form  → "Displays the existing title. Modify the title as required."
+       Mention format rules, limits or validations ONLY when visible on the screen (hint text, helper text, asterisk = mandatory).
+     - control_type: one of Text, Text Area, Password, Number, Email, Dropdown, Multi-select, Checkbox,
+       Radio Button, Toggle, Date Picker, File Upload, Rich Text Editor, Captcha, Display, Link, Button, Icon.
+       Use "Display" for read-only values and table columns. Leave "" if genuinely unclear.
+
+3. PROCEDURE ("steps") — ONLY for a real task flow
+   Write numbered steps ONLY when the recorded actions show the user completing a task on this screen
+   (filling a form and submitting, logging in, uploading a file). Each action step is an instruction
+   ("Enter the registered email address in the Email field."); after a submit/navigation add a result step
+   with kind="result": "The Dashboard page will be displayed." / "A success message will be displayed."
+   Do NOT turn exploratory clicks (opening menus, links, dismissing pop-ups, clicking around) into steps —
+   those belong in the opening paragraph or are omitted. If there is no real task flow, return "steps": [].
+
+4. NOTES — only when genuinely useful (mandatory-field rules, irreversible actions, prerequisites,
+   role restrictions). Do not start the note with "Note:". Usually NONE: never restate a control's
+   description, never describe which tab is active, never give generic advice ("Use the filters to…").
+
+5. LANGUAGE
+   - Formal, clear, present tense, active voice, no contractions.
+   - Refer to the reader as "the user" / "users" (or the audience given below).
+   - Use the exact on-screen labels; use "→" for menu paths.
+   - No marketing language, no speculation about features you cannot see.
+
+EXAMPLE (for a list page — imitate the shape, not the content):
+{
+  "screen_name": "Tender Management",
+  "intro": "Click Quick Management → Tender Management from the left navigation panel to access the module. The Tender Management page displays all tender records available in the system. Users can search for existing tenders, create new tender records, edit existing records, or delete records.",
+  "sections": [
+    {"title": "Search Filters", "lead_in": "", "items": [
+      {"name": "Language", "description": "Select the language in which the tender records should be displayed.", "control_type": "Dropdown"},
+      {"name": "Search", "description": "Enter the tender title or related information to search for a specific tender record.", "control_type": "Text"}
+    ]},
+    {"title": "Tender Management Table", "lead_in": "The Tender Management table contains the following details:", "items": [
+      {"name": "Title", "description": "Displays the title of the tender.", "control_type": "Display"},
+      {"name": "Publish Date", "description": "Displays the date on which the tender is published.", "control_type": "Display"}
+    ]},
+    {"title": "Action Buttons", "lead_in": "", "items": [
+      {"name": "Edit", "description": "Click to modify the details of the selected tender.", "control_type": "Icon"},
+      {"name": "Delete", "description": "Click to remove the selected tender record.", "control_type": "Icon"}
+    ]},
+    {"title": "Buttons", "lead_in": "", "items": [
+      {"name": "Add Tender", "description": "Click to open the Tender Management form for creating a new tender.", "control_type": "Button"}
+    ]}
+  ],
+  "steps": [],
+  "notes": []
+}

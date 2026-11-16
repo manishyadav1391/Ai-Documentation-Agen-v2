@@ -35,6 +35,15 @@ class SettingsDialog(tk.Toplevel):
 
         tk.Label(main_frame, text="DocBot Settings & API Keys", font=("Segoe UI", 12, "bold"), fg="#1E293B").pack(pady=(0, 15))
 
+        # Active provider used for AI generation
+        prov_frame = tk.Frame(main_frame)
+        prov_frame.pack(fill=tk.X, pady=(0, 10))
+        tk.Label(prov_frame, text="Active AI provider:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT)
+        self.active_provider_var = tk.StringVar(value=self.config.provider)
+        ttk.Combobox(prov_frame, textvariable=self.active_provider_var,
+                     values=["browser", "anthropic", "openai_compat", "openrouter", "ollama"],
+                     state="readonly", width=18).pack(side=tk.LEFT, padx=8)
+
         # We'll use a tabbed panel for each provider
         notebook = ttk.Notebook(main_frame)
         notebook.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
@@ -130,6 +139,43 @@ class SettingsDialog(tk.Toplevel):
         self.ollama_test_btn = tk.Button(ollama_frame, text="Test Connection", bg="#F1F5F9", command=self.test_ollama_conn)
         self.ollama_test_btn.pack(anchor="e")
 
+        # --- Tab: OpenRouter ---
+        openrouter_frame = tk.Frame(notebook, padx=10, pady=10)
+        notebook.add(openrouter_frame, text="OpenRouter")
+        or_cfg = self.config.providers.openrouter
+
+        tk.Label(openrouter_frame, text="OpenRouter API Key:", font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(5, 2))
+        self.openrouter_key_var = tk.StringVar(value=self.secrets.get("openrouter_api_key", ""))
+
+        orkey_entry_frame = tk.Frame(openrouter_frame)
+        orkey_entry_frame.pack(fill=tk.X, pady=(0, 2))
+        self.openrouter_key_entry = tk.Entry(orkey_entry_frame, textvariable=self.openrouter_key_var, show="•", width=50)
+        self.openrouter_key_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Checkbutton(orkey_entry_frame, text="Show", command=lambda: self.toggle_show(self.openrouter_key_entry)).pack(side=tk.RIGHT, padx=5)
+        if not self.openrouter_key_var.get() and os.environ.get(or_cfg.api_key_env):
+            tk.Label(openrouter_frame, text=f"Leave blank to use {or_cfg.api_key_env} from .env (currently set).",
+                     font=("Segoe UI", 8, "italic"), fg="#64748B").pack(anchor="w", pady=(0, 8))
+
+        tk.Label(openrouter_frame, text="Model (e.g. ~openai/gpt-sol-latest, ~anthropic/claude-sonnet-latest):",
+                 font=("Segoe UI", 9)).pack(anchor="w", pady=(5, 2))
+        self.openrouter_model_var = tk.StringVar(value=or_cfg.model)
+        tk.Entry(openrouter_frame, textvariable=self.openrouter_model_var).pack(fill=tk.X, pady=(0, 10))
+
+        tk.Label(openrouter_frame, text="Max Tokens:", font=("Segoe UI", 9)).pack(anchor="w", pady=(5, 2))
+        self.openrouter_max_tokens_var = tk.StringVar(value=str(or_cfg.max_tokens))
+        tk.Entry(openrouter_frame, textvariable=self.openrouter_max_tokens_var).pack(fill=tk.X, pady=(0, 10))
+
+        tk.Label(openrouter_frame, text="Site URL (optional, sent as HTTP-Referer):", font=("Segoe UI", 9)).pack(anchor="w", pady=(5, 2))
+        self.openrouter_site_url_var = tk.StringVar(value=or_cfg.site_url)
+        tk.Entry(openrouter_frame, textvariable=self.openrouter_site_url_var).pack(fill=tk.X, pady=(0, 10))
+
+        tk.Label(openrouter_frame, text="App name (optional, sent as X-OpenRouter-Title):", font=("Segoe UI", 9)).pack(anchor="w", pady=(5, 2))
+        self.openrouter_app_name_var = tk.StringVar(value=or_cfg.app_name)
+        tk.Entry(openrouter_frame, textvariable=self.openrouter_app_name_var).pack(fill=tk.X, pady=(0, 15))
+
+        self.openrouter_test_btn = tk.Button(openrouter_frame, text="Test Connection", bg="#F1F5F9", command=self.test_openrouter_conn)
+        self.openrouter_test_btn.pack(anchor="e")
+
         # Bottom Buttons
         btn_frame = tk.Frame(main_frame)
         btn_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(15, 0))
@@ -178,7 +224,7 @@ class SettingsDialog(tk.Toplevel):
             except Exception as e:
                 self.show_test_result(False, str(e))
             finally:
-                self.root.after(0, lambda: self.anthropic_test_btn.config(state=tk.NORMAL, text="Test Connection"))
+                self.after(0, lambda: self.anthropic_test_btn.config(state=tk.NORMAL, text="Test Connection"))
 
         threading.Thread(target=run_test, daemon=True).start()
 
@@ -216,7 +262,7 @@ class SettingsDialog(tk.Toplevel):
             except Exception as e:
                 self.show_test_result(False, str(e))
             finally:
-                self.root.after(0, lambda: self.openai_test_btn.config(state=tk.NORMAL, text="Test Connection"))
+                self.after(0, lambda: self.openai_test_btn.config(state=tk.NORMAL, text="Test Connection"))
 
         threading.Thread(target=run_test, daemon=True).start()
 
@@ -250,12 +296,52 @@ class SettingsDialog(tk.Toplevel):
             except Exception as e:
                 self.show_test_result(False, str(e))
             finally:
-                self.root.after(0, lambda: self.ollama_test_btn.config(state=tk.NORMAL, text="Test Connection"))
+                self.after(0, lambda: self.ollama_test_btn.config(state=tk.NORMAL, text="Test Connection"))
+
+        threading.Thread(target=run_test, daemon=True).start()
+
+    def test_openrouter_conn(self):
+        or_cfg = self.config.providers.openrouter
+        key = self.openrouter_key_var.get().strip() or os.environ.get(or_cfg.api_key_env, "")
+        model = self.openrouter_model_var.get().strip()
+
+        if not key:
+            messagebox.showerror("Error", "Please input an OpenRouter API Key to test.")
+            return
+
+        self.openrouter_test_btn.config(state=tk.DISABLED, text="Testing...")
+
+        def run_test():
+            try:
+                headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
+                if self.openrouter_site_url_var.get().strip():
+                    headers["HTTP-Referer"] = self.openrouter_site_url_var.get().strip()
+                if self.openrouter_app_name_var.get().strip():
+                    headers["X-OpenRouter-Title"] = self.openrouter_app_name_var.get().strip()
+                client = httpx.Client(
+                    base_url=or_cfg.base_url,
+                    headers=headers,
+                    timeout=httpx.Timeout(30.0, connect=5.0),
+                )
+                payload = {
+                    "model": model,
+                    "max_tokens": 16,
+                    "messages": [{"role": "user", "content": "Reply with OK"}],
+                }
+                resp = client.post("/chat/completions", json=payload)
+                if resp.is_error:
+                    raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:300]}")
+                txt = resp.json()["choices"][0]["message"]["content"]
+                self.show_test_result(True, f"Successfully reached OpenRouter! Response: {txt}")
+            except Exception as e:
+                self.show_test_result(False, str(e))
+            finally:
+                self.after(0, lambda: self.openrouter_test_btn.config(state=tk.NORMAL, text="Test Connection"))
 
         threading.Thread(target=run_test, daemon=True).start()
 
     def show_test_result(self, is_ok, msg):
-        self.root.after(0, lambda: messagebox.showinfo("Connection Test Result", "✓ Connection Successful!\n" + msg) if is_ok else messagebox.showerror("Connection Test Result", "✗ Connection Failed!\n" + msg))
+        self.after(0, lambda: messagebox.showinfo("Connection Test Result", "✓ Connection Successful!\n" + msg) if is_ok else messagebox.showerror("Connection Test Result", "✗ Connection Failed!\n" + msg))
 
     def save_settings(self):
         # Update config.yaml values
@@ -271,6 +357,13 @@ class SettingsDialog(tk.Toplevel):
             self.config.providers.ollama.model = self.ollama_model_var.get().strip()
             self.config.providers.ollama.max_tokens = int(self.ollama_max_tokens_var.get().strip())
 
+            self.config.providers.openrouter.model = self.openrouter_model_var.get().strip()
+            self.config.providers.openrouter.max_tokens = int(self.openrouter_max_tokens_var.get().strip())
+            self.config.providers.openrouter.site_url = self.openrouter_site_url_var.get().strip()
+            self.config.providers.openrouter.app_name = self.openrouter_app_name_var.get().strip()
+
+            self.config.provider = self.active_provider_var.get()
+
             save_config(self.config)
             reload_config()
         except ValueError:
@@ -282,6 +375,7 @@ class SettingsDialog(tk.Toplevel):
             "anthropic_api_key": self.anthropic_key_var.get().strip(),
             "openai_api_key": self.openai_key_var.get().strip(),
             "ollama_api_key": self.ollama_key_var.get().strip(),
+            "openrouter_api_key": self.openrouter_key_var.get().strip(),
         }
 
         try:

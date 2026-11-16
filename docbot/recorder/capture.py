@@ -497,7 +497,17 @@ class CaptureSession:
             vp_name = f"{base}_viewport.png"
             vp_path = self.session_dir / vp_name
             try:
-                page.screenshot(path=str(vp_path), clip=vp_box)
+                # A non-full-page screenshot's clip is relative to the visible
+                # viewport, not the document: using scrollX/scrollY as the
+                # origin fails ("Clipped area is ... outside the resulting
+                # image") once the page is scrolled. vp_box keeps the scroll
+                # offset for translating element coordinates below.
+                vp_clip = {
+                    "x": 0, "y": 0,
+                    "width": vp_box.get("width") or 1280,
+                    "height": vp_box.get("height") or 720,
+                }
+                page.screenshot(path=str(vp_path), clip=vp_clip)
                 if mode == "viewport":
                     screen.screenshot = vp_name
                 screen.viewport_screenshot = vp_name

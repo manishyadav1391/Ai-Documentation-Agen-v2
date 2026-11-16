@@ -276,7 +276,7 @@ class WelcomeWizard(tk.Toplevel):
         
         tk.Label(form_frame, text="Provider:", font=("Segoe UI", 9)).grid(row=0, column=0, sticky="w", pady=5)
         self.provider_var = tk.StringVar(value=self.config.provider)
-        self.provider_combo = ttk.Combobox(form_frame, textvariable=self.provider_var, values=["browser", "anthropic", "openai_compat", "ollama"], state="readonly", width=18)
+        self.provider_combo = ttk.Combobox(form_frame, textvariable=self.provider_var, values=["browser", "anthropic", "openai_compat", "openrouter", "ollama"], state="readonly", width=18)
         self.provider_combo.grid(row=0, column=1, sticky="w", padx=5, pady=5)
         self.provider_combo.bind("<<ComboboxSelected>>", self.on_provider_change)
         
@@ -369,6 +369,19 @@ class WelcomeWizard(tk.Toplevel):
                     payload = {
                         "model": self.config.providers.openai_compat.model,
                         "max_tokens": 10,
+                        "messages": [{"role": "user", "content": "Reply with OK"}]
+                    }
+                    resp = client.post("/chat/completions", json=payload)
+                    resp.raise_for_status()
+                elif provider == "openrouter":
+                    client = httpx.Client(
+                        base_url=self.config.providers.openrouter.base_url,
+                        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
+                        timeout=httpx.Timeout(30.0, connect=5.0)
+                    )
+                    payload = {
+                        "model": self.config.providers.openrouter.model,
+                        "max_tokens": 16,
                         "messages": [{"role": "user", "content": "Reply with OK"}]
                     }
                     resp = client.post("/chat/completions", json=payload)

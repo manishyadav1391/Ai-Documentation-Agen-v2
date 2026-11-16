@@ -435,6 +435,28 @@ def _draw_numbered_badge(
     draw.text((cx - lw // 2, cy - lh // 2), label, fill=(255, 255, 255), font=font)
 
 
+def resolve_annotation_flags(screen, annot_style: dict | None) -> Tuple[bool, bool]:
+    """
+    Decide whether red boxes and callouts are drawn for a screen.
+
+    Precedence: per-screen override (Screen.show_boxes / show_callouts)
+    > client style ``annotations.show_boxes`` / ``show_callouts`` > True.
+    ``annotations.mode: boxes_only`` forces callouts off.
+    Returns ``(show_boxes, show_callouts)``.
+    """
+    annot_style = annot_style or {}
+    show_boxes = bool(annot_style.get("show_boxes", True))
+    show_callouts = bool(annot_style.get("show_callouts", True))
+    if annot_style.get("mode") == "boxes_only":
+        show_callouts = False
+    if screen is not None:
+        if getattr(screen, "show_boxes", None) is not None:
+            show_boxes = bool(screen.show_boxes)
+        if getattr(screen, "show_callouts", None) is not None:
+            show_callouts = bool(screen.show_callouts)
+    return show_boxes, show_callouts
+
+
 def render_annotations(
     session_dir: Path,
     screen_index: int,
@@ -482,6 +504,7 @@ def render_annotations(
 
     # Resolve DPI scale factor from session model
     dpr = 1.0
+    screen = None
     try:
         from docbot.models import SessionStore
         session = SessionStore.load(session_dir)
@@ -503,8 +526,15 @@ def render_annotations(
     from manual_builder.style_loader import StyleConfig
     style_cfg = StyleConfig(raw=profile.get("style", {}))
     annot_style = style_cfg.raw.get("annotations", {})
-    
-    callout_style = annot_style.get("callout_style", "numbered")
+
+    show_boxes, show_callouts = resolve_annotation_flags(screen, annot_style)
+    if not show_boxes and not show_callouts:
+        logger.debug(f"Annotations disabled for Screen {screen_index}; copying raw screenshot.")
+        import shutil
+        shutil.copy(img_path, output_path)
+        return
+
+    callout_style =annot_style.get("callout_style", "numbered")
     callout_fill = _hex_to_rgb(style_cfg.get_color(annot_style.get("callout_fill", "FFFFFF")))
     callout_border = _hex_to_rgb(style_cfg.get_color(annot_style.get("callout_border", "E5484D")))
     callout_border_width = int(annot_style.get("callout_border_width", 3))
@@ -581,7 +611,9 @@ def render_annotations(
         palette = _DEFAULT_PALETTE.get(color_name, _DEFAULT_PALETTE["red"])
 
         # Draw region bounding box
-        if region_style == "overlay":
+        if not show_boxes:
+            pass
+        elif region_style == "overlay":
             fill_color = palette["stroke"] + (50,)
             draw.rectangle(
                 [(region.x, region.y), (region.x + region.w, region.y + region.h)],
@@ -605,7 +637,7 @@ def render_annotations(
                 width=width_to_use,
             )
 
-        if mode == "boxes_only":
+        if mode == "boxes_only" or not show_callouts:
             continue
 
         if mode == "numbered_badges":

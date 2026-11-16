@@ -56,10 +56,24 @@ class _Step(BaseModel):
     event_id: str | None = None
 
 
+class _DocItem(BaseModel):
+    name: str = ""
+    description: str = ""
+    control_type: str = ""
+
+
+class _DocSection(BaseModel):
+    title: str = ""
+    lead_in: str = ""
+    items: list[_DocItem] = []
+
+
 class ScreenDocResponse(BaseModel):
     """Parsed LLM response for a single screen."""
     screen_name: str = ""
     screen_type: str = "other"
+    intro: str = ""
+    sections: list[_DocSection] = []
     purpose: str = ""
     navigation_sentence: str = ""
     regions: list[_RegionLabel] = []
@@ -88,7 +102,7 @@ class Generator:
         provider: The active LLM provider instance.
     """
 
-    _PROMPT_VERSION = "v3-1"  # bump to invalidate all caches when prompt changes
+    _PROMPT_VERSION = "v4-1"  # bump to invalidate all caches when prompt changes
 
     def __init__(self, provider: Provider) -> None:
         self.provider = provider
@@ -103,6 +117,7 @@ class Generator:
         screen: "Screen",
         client_profile: dict | None = None,
         progress_callback: Callable[[str], None] | None = None,
+        session_dir: Path | None = None,
     ) -> ScreenDocResponse:
         """
         Generate documentation for a single screen.
@@ -112,6 +127,8 @@ class Generator:
             screen:         The screen to document.
             client_profile: Optional dict with voice, glossary, field_style keys.
             progress_callback: Optional callback for reporting status updates.
+            session_dir:    Session folder; needed to attach the screenshot and
+                            to write the llm/ prompt logs in the right place.
 
         Returns:
             ``ScreenDocResponse`` validated pydantic model.
@@ -125,6 +142,8 @@ class Generator:
         field_style = profile.get("style", {}).get("fields", {}).get("style", "table")
         app_name = profile.get("voice", {}).get("app_name", "Enterprise Application")
         client_display_name = profile.get("manifest", {}).get("client_display_name", app_name)
+        audience = _audience(profile)
+        house_style = profile.get("house_style") or _default_house_style()
 
         # Build context objects for the prompt
         screen_context = {
@@ -148,7 +167,9 @@ class Generator:
                 "required": el.required,
                 "placeholder": el.placeholder,
                 "ancestor_section": el.ancestor_section,
-                "bounding_box": el.bounding_box.model_dump() if el.bounding_box else None,
+                "element_class": el.element_class,
+                "max_length": el.max_length,
+                "pos": [int(el.bounding_box.x), int(el.bounding_box.y)] if el.bounding_box else None,
             }
             for i, el in enumerate(screen.elements)
         ]
@@ -181,9 +202,12 @@ class Generator:
 
         prompt = load_prompt(
             "screen_documentation",
-            version="v3",
+            version="v4",
             app_name=app_name,
             client_display_name=client_display_name,
+            audience=audience,
+            house_style=house_style,
+            arrival_json=json.dumps(_arrival_context(session, screen), indent=2),
             screen_context_json=json.dumps(screen_context, indent=2),
             elements_json=json.dumps(elements_with_ids, indent=2),
             regions_json=json.dumps(regions_with_ids, indent=2),
@@ -208,12 +232,13 @@ class Generator:
         logger.info(f"[Generator] Screen {screen.index}: calling LLM ({self.provider.name})…")
 
         # Log the full prompt to the session LLM log
-        _log_prompt(session, screen.index, prompt)
+        _log_prompt(session, screen.index, prompt, session_dir)
 
-        # Determine if we can pass a screenshot
+        # Attach the screenshot (paths in the model are relative to the session dir)
         images: list[Path] = []
-        if screen.screenshot and Path(screen.screenshot).exists():
-            images = [Path(screen.screenshot)]
+        shot = _screenshot_path(screen, session_dir)
+        if shot is not None:
+            images = [shot]
 
         try:
             result = self.provider.chat_json(
@@ -228,14 +253,15 @@ class Generator:
             raise
 
         # Log the raw response
-        _log_response(session, screen.index, result.model_dump_json(indent=2))
+        _log_response(session, screen.index, result.model_dump_json(indent=2), session_dir)
 
         # Merge by id back into screen model
         _merge_result_into_screen(screen, result, content_hash)
 
         logger.info(
             f"[Generator] Screen {screen.index}: generated '{result.screen_name}' "
-            f"({len(result.fields)} fields, {len(result.steps)} steps)."
+            f"({len(result.sections)} sections, {len(result.fields)} fields, "
+            f"{len(result.steps)} steps, screenshot={'yes' if images else 'no'})."
         )
         return result
 
@@ -267,10 +293,11 @@ class Generator:
 
         prompt = load_prompt(
             "module_intro",
-            version="v3",
+            version="v4",
             app_name=app_name,
             client_display_name=client_display_name,
-            module_name=session.module_name or "Module",
+            audience=_audience(profile),
+            module_name=_display_module_name(session.module_name),
             screens_json=json.dumps(screens_info, indent=2),
             voice_examples=voice_examples,
         )
@@ -303,6 +330,58 @@ class Generator:
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+def _display_module_name(name: str) -> str:
+    """Folder-derived names arrive in lower case ("workflow automation")."""
+    name = (name or "").strip() or "Module"
+    return name.title() if name == name.lower() else name
+
+
+def _audience(profile: dict) -> str:
+    return (profile.get("voice", {}) or {}).get("audience") or "users"
+
+
+def _default_house_style() -> str:
+    try:
+        return load_prompt("house_style", version="v4")
+    except FileNotFoundError:
+        return ""
+
+
+def _screenshot_path(screen: "Screen", session_dir: Path | None) -> Path | None:
+    """Resolve the screen's screenshot to an existing file (names are session-relative)."""
+    for name in (screen.screenshot, screen.viewport_screenshot):
+        if not name:
+            continue
+        p = Path(name)
+        if not p.is_absolute() and session_dir is not None:
+            p = Path(session_dir) / p
+        if p.is_file():
+            return p
+    return None
+
+
+def _arrival_context(session: "SessionModel", screen: "Screen") -> dict:
+    """How the user got to this screen: previous screen + what was clicked there."""
+    screens = list(session.screens)
+    if screen.state_of is not None:
+        prev = next((s for s in screens if s.index == screen.state_of), None)
+    else:
+        earlier = [s for s in screens if s.index < screen.index and s.state_of is None]
+        prev = earlier[-1] if earlier else None
+    info: dict = {"menu_trail": screen.nav_trail, "breadcrumb": screen.breadcrumb}
+    if screen.state_of is not None:
+        info["note"] = f"This is a state of the parent screen ({screen.state_label or 'dialog/pop-up'})."
+    if prev is None:
+        info["previous_screen"] = None
+        return info
+    info["previous_screen"] = prev.content.screen_name or prev.title or f"Screen {prev.index}"
+    clicks = [e for e in prev.events if e.kind in ("click", "submit", "navigate") and e.target_name]
+    if clicks:
+        last = clicks[-1]
+        info["clicked_on_previous_screen"] = {"name": last.target_name, "role": last.target_role}
+    return info
+
 
 def _format_voice_examples(voice: dict) -> str:
     if not voice:
@@ -346,12 +425,18 @@ def _compute_hash(*parts: str) -> str:
     return h.hexdigest()
 
 
-def _log_prompt(session: "SessionModel", screen_index: int, prompt: str) -> None:
+def _log_dir_for(session: "SessionModel", session_dir: Path | None) -> Path:
+    if session_dir is not None:
+        return Path(session_dir) / "llm"
+    from docbot import paths
+    return paths.sessions_dir() / session.session_id / "llm"
+
+
+def _log_prompt(session: "SessionModel", screen_index: int, prompt: str,
+                session_dir: Path | None = None) -> None:
     try:
-        from pathlib import Path
         import datetime
-        session_dir = Path(f"sessions/{session.session_id}")
-        log_dir = session_dir / "llm"
+        log_dir = _log_dir_for(session, session_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.datetime.now().strftime("%H%M%S")
         (log_dir / f"screen_{screen_index}_{ts}_prompt.txt").write_text(prompt, encoding="utf-8")
@@ -359,12 +444,11 @@ def _log_prompt(session: "SessionModel", screen_index: int, prompt: str) -> None
         logger.debug(f"Could not write prompt log: {e}")
 
 
-def _log_response(session: "SessionModel", screen_index: int, response: str) -> None:
+def _log_response(session: "SessionModel", screen_index: int, response: str,
+                  session_dir: Path | None = None) -> None:
     try:
-        from pathlib import Path
         import datetime
-        session_dir = Path(f"sessions/{session.session_id}")
-        log_dir = session_dir / "llm"
+        log_dir = _log_dir_for(session, session_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.datetime.now().strftime("%H%M%S")
         (log_dir / f"screen_{screen_index}_{ts}_response.json").write_text(response, encoding="utf-8")
@@ -378,11 +462,21 @@ def _merge_result_into_screen(
     content_hash: str,
 ) -> None:
     """Merge LLM result by id into the screen model."""
-    from docbot.models import FieldDetail, Step, Region, ScreenContent
+    from docbot.models import DocItem, DocSection, Step
 
 
     # Update content fields
     screen.content.screen_name = result.screen_name or screen.content.screen_name
+    screen.content.intro = result.intro
+    screen.content.sections = [
+        DocSection(
+            title=sec.title,
+            lead_in=sec.lead_in,
+            items=[DocItem(**it.model_dump()) for it in sec.items if it.name.strip()],
+        )
+        for sec in result.sections
+        if sec.items
+    ]
     screen.content.purpose = result.purpose
     screen.content.navigation_sentence = result.navigation_sentence
     screen.content.notes = result.notes
@@ -422,6 +516,8 @@ def _content_to_response(content: "ScreenContent") -> ScreenDocResponse:
     """Re-wrap cached ScreenContent as a ScreenDocResponse for uniform return type."""
     return ScreenDocResponse(
         screen_name=content.screen_name,
+        intro=content.intro,
+        sections=[_DocSection(**sec.model_dump()) for sec in content.sections],
         purpose=content.purpose,
         navigation_sentence=content.navigation_sentence,
         steps=[_Step(n=s.n, text=s.text, kind=s.kind, event_id=s.event_id)

@@ -54,6 +54,16 @@ class OpenAICompatProviderConfig(BaseModel):
     max_tokens: int = 8000
 
 
+class OpenRouterProviderConfig(BaseModel):
+    """OpenRouter settings (OpenAI-compatible gateway to many models)."""
+    api_key_env: str = "OPENROUTER_API_KEY"
+    base_url: str = "https://openrouter.ai/api/v1"
+    model: str = "~openai/gpt-sol-latest"
+    max_tokens: int = 8000
+    site_url: str = ""      # optional HTTP-Referer header (rankings on openrouter.ai)
+    app_name: str = "DocBot"  # optional X-OpenRouter-Title header
+
+
 class OllamaProviderConfig(BaseModel):
     """Ollama local / remote API settings."""
     host: str = "http://localhost:11434"
@@ -84,6 +94,7 @@ class ProvidersConfig(BaseModel):
     browser: BrowserProviderConfig = Field(default_factory=BrowserProviderConfig)
     anthropic: AnthropicProviderConfig = Field(default_factory=AnthropicProviderConfig)
     openai_compat: OpenAICompatProviderConfig = Field(default_factory=OpenAICompatProviderConfig)
+    openrouter: OpenRouterProviderConfig = Field(default_factory=OpenRouterProviderConfig)
     ollama: OllamaProviderConfig = Field(default_factory=OllamaProviderConfig)
 
 
@@ -102,7 +113,7 @@ class Config(BaseModel):
     Note: the ``theme:`` block present in v2 config.yaml has been removed.
     Branding is now controlled per-client via ``clients/<key>/style.yaml``.
     """
-    provider: Literal["browser", "anthropic", "openai_compat", "ollama"] = "browser"
+    provider: Literal["browser", "anthropic", "openai_compat", "openrouter", "ollama"] = "browser"
     default_template: str = "corporate"
     current_client: str = "ncb"
     content_dir: str = "content"
@@ -137,6 +148,7 @@ class Config(BaseModel):
             "browser": self.providers.browser,
             "anthropic": self.providers.anthropic,
             "openai_compat": self.providers.openai_compat,
+            "openrouter": self.providers.openrouter,
             "ollama": self.providers.ollama,
         }
         try:
@@ -158,6 +170,7 @@ class Config(BaseModel):
             "browser": self.providers.browser,
             "anthropic": self.providers.anthropic,
             "openai_compat": self.providers.openai_compat,
+            "openrouter": self.providers.openrouter,
             "ollama": self.providers.ollama,
         }
         provider_cfg = mapping.get(p)

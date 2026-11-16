@@ -36,9 +36,10 @@ from PIL import Image, ImageTk
 from loguru import logger
 
 from config import get_config, save_config
+from docbot import paths
 from docbot.models import SessionStore, Screen, Region, FieldDetail, Step, BBox
 from docbot.processing.generator import Generator
-from docbot.processing.annotate import render_annotations, _wrap_text
+from docbot.processing.annotate import render_annotations, resolve_annotation_flags, _wrap_text
 from docbot.processing.crops import extract_crops
 from ui.widgets import setup_dialog
 
@@ -204,9 +205,23 @@ class ReviewSessionUI:
         ttk.Button(zoom_bar, text="100%", width=5, command=self._zoom_100).pack(side=tk.LEFT, padx=2)
         ttk.Button(zoom_bar, text="200%", width=5, command=self._zoom_200).pack(side=tk.LEFT, padx=2)
         self.callout_visible = tk.BooleanVar(value=True)
-        ttk.Checkbutton(zoom_bar, text="Show callouts",
+        ttk.Checkbutton(zoom_bar, text="Show callouts (editor)",
                         variable=self.callout_visible,
                         command=self._render_canvas).pack(side=tk.LEFT, padx=10)
+
+        # Per-screen choice of what gets drawn on the screenshot in the manual
+        ttk.Separator(zoom_bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6)
+        ttk.Label(zoom_bar, text="In manual:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=4)
+        self.manual_boxes_var = tk.BooleanVar(value=True)
+        self.manual_callouts_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(zoom_bar, text="Red boxes",
+                        variable=self.manual_boxes_var,
+                        command=self._on_manual_annotation_toggle).pack(side=tk.LEFT, padx=4)
+        ttk.Checkbutton(zoom_bar, text="Callouts",
+                        variable=self.manual_callouts_var,
+                        command=self._on_manual_annotation_toggle).pack(side=tk.LEFT, padx=4)
+        ttk.Button(zoom_bar, text="Default", width=8,
+                   command=self._reset_manual_annotation_toggles).pack(side=tk.LEFT, padx=4)
         self.preview_btn = ttk.Button(zoom_bar, text="👁️ Preview", width=10,
                                       command=self._toggle_preview)
         self.preview_btn.pack(side=tk.RIGHT, padx=6)
@@ -359,7 +374,9 @@ class ReviewSessionUI:
         for s in self.session.screens:
             label = s.content.screen_name or s.title or f"Screen {s.index}"
             status = "✓ " if s.reviewed else "  "
-            self.screen_listbox.insert(tk.END, f"{status}{label}")
+            boxes, callouts = resolve_annotation_flags(s, self.style_cfg.raw.get("annotations", {}))
+            clean = "  [no annotations]" if not (boxes or callouts) else ""
+            self.screen_listbox.insert(tk.END, f"{status}{label}{clean}")
 
     def _on_screen_selected_from_list(self, event):
         sel = self.screen_listbox.curselection()
@@ -402,6 +419,7 @@ class ReviewSessionUI:
         self._refresh_fields_tree()
         self._refresh_figs_listbox()
         self._refresh_regions_listbox()
+        self._sync_manual_annotation_toggles()
         self._load_canvas_image()
         self.status_var.set(
             f"Screen {self.screen.index}: {len([r for r in self.screen.regions if not r.deleted])} regions."
@@ -436,6 +454,46 @@ class ReviewSessionUI:
                     active_idx = self.regions_listbox.size() - 1
         if active_idx is not None:
             self.regions_listbox.select_set(active_idx)
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Manual annotation toggles (red boxes / callouts per screen)
+    # ────────────────────────────────────────────────────────────────────────
+
+    def _manual_annotation_flags(self) -> tuple[bool, bool]:
+        """Effective (show_boxes, show_callouts) for the current screen."""
+        return resolve_annotation_flags(self.screen, self.style_cfg.raw.get("annotations", {}))
+
+    def _sync_manual_annotation_toggles(self):
+        show_boxes, show_callouts = self._manual_annotation_flags()
+        self.manual_boxes_var.set(show_boxes)
+        self.manual_callouts_var.set(show_callouts)
+
+    def _on_manual_annotation_toggle(self):
+        self.screen.show_boxes = bool(self.manual_boxes_var.get())
+        self.screen.show_callouts = bool(self.manual_callouts_var.get())
+        self._after_manual_annotation_change()
+
+    def _reset_manual_annotation_toggles(self):
+        self.screen.show_boxes = None
+        self.screen.show_callouts = None
+        self._sync_manual_annotation_toggles()
+        self._after_manual_annotation_change()
+
+    def _after_manual_annotation_change(self):
+        self._refresh_sidebar()
+        self.screen_listbox.select_set(self.current_screen_idx)
+        if self.preview_mode:
+            # Re-render the preview with the new settings
+            self.preview_mode = False
+            self._toggle_preview()
+        else:
+            self._redraw_regions()
+        show_boxes, show_callouts = self._manual_annotation_flags()
+        parts = [p for p, on in (("red boxes", show_boxes), ("callouts", show_callouts)) if on]
+        self.status_var.set(
+            f"Screen {self.screen.index} in manual: "
+            f"{' + '.join(parts) if parts else 'clean screenshot (no annotations)'}."
+        )
 
     # ────────────────────────────────────────────────────────────────────────
     # Saving
@@ -491,10 +549,21 @@ class ReviewSessionUI:
     # ────────────────────────────────────────────────────────────────────────
 
     def _load_canvas_image(self):
-        img_path = self.session_dir / self.screen.screenshot
-        if not img_path.exists():
-            img_path = self.session_dir / f"screen_{self.screen.index}.png"
-        if not img_path.exists():
+        # screenshot may be "" (capture failed) -> would resolve to the session
+        # folder itself, so require an actual file and try the known variants.
+        candidates = [
+            self.screen.screenshot,
+            self.screen.viewport_screenshot,
+            f"screen_{self.screen.index}.png",
+            f"screen_{self.screen.index}_viewport.png",
+            f"screen_{self.screen.index}_full.png",
+        ]
+        img_path = next(
+            (self.session_dir / c for c in candidates if c and (self.session_dir / c).is_file()),
+            None,
+        )
+        if img_path is None:
+            self.pil_image = None
             self.canvas.delete(tk.ALL)
             self.canvas.create_text(300, 200, text="No screenshot file found.",
                                     font=("Segoe UI", 12))
@@ -574,6 +643,11 @@ class ReviewSessionUI:
         region_border = annot_style.get("region_border", "E5484D")
         region_border_width = int(annot_style.get("region_border_width", 3))
 
+        # Regions stay editable even when they won't be drawn in the manual;
+        # show them dashed/grey so the difference is visible.
+        manual_boxes, manual_callouts = self._manual_annotation_flags()
+        draw_callouts = self.callout_visible.get() and manual_callouts
+
         for r in self.screen.regions:
             if r.deleted:
                 continue
@@ -593,11 +667,15 @@ class ReviewSessionUI:
                     color = "#EF4444"
                     width = 2
 
-            self.canvas.create_rectangle(x1, y1, x2, y2, outline=color,
-                                         width=width, tags=("box_overlay",))
+            if not manual_boxes and not is_active:
+                self.canvas.create_rectangle(x1, y1, x2, y2, outline="#94A3B8",
+                                             width=1, dash=(4, 3), tags=("box_overlay",))
+            else:
+                self.canvas.create_rectangle(x1, y1, x2, y2, outline=color,
+                                             width=width, tags=("box_overlay",))
 
             # ── E1: callout bubble + leader line ──
-            if self.callout_visible.get():
+            if draw_callouts:
                 ax, ay = self._callout_anchor(r)
                 cx, cy = ax * z, ay * z
 
@@ -760,7 +838,7 @@ class ReviewSessionUI:
                 if abs(ix - hx) <= tol and abs(iy - hy) <= tol:
                     return "handle", active, name
 
-        if self.callout_visible.get():
+        if self.callout_visible.get() and self._manual_annotation_flags()[1]:
             annot_style = self.style_cfg.raw.get("annotations", {})
             callout_style = annot_style.get("callout_style", "numbered")
             for r in reversed(self.screen.regions):
@@ -1338,7 +1416,8 @@ class ReviewSessionUI:
                 from docbot.clients.profile import ClientProfile
                 profile = ClientProfile.load(cfg.current_client)
                 self.screen.content.content_hash = ""
-                gen.generate_screen(self.session, self.screen, client_profile=profile.data)
+                gen.generate_screen(self.session, self.screen, client_profile=profile.data,
+                                   session_dir=self.session_dir)
                 
                 def success():
                     self._load_screen(self.current_screen_idx)

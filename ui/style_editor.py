@@ -298,6 +298,21 @@ class StyleEditorDialog(tk.Toplevel):
         cb_zebra = tk.Checkbutton(frame, text="Enable Table Zebra Striping", variable=self.zebra_striping_var, command=self.update_preview)
         cb_zebra.grid(row=4, column=0, columnspan=2, **pad)
 
+        # Screenshots in the manual
+        tk.Label(frame, text="Screenshots", font=("Arial", 11, "bold")).grid(row=5, column=0, columnspan=2, **pad)
+        annotations = self.style_config.raw.get("annotations", {}) or {}
+        self.show_boxes_var = tk.BooleanVar(value=annotations.get("show_boxes", True))
+        tk.Checkbutton(frame, text="Draw red boxes on screenshots (default for all screens)",
+                       variable=self.show_boxes_var).grid(row=6, column=0, columnspan=2, **pad)
+        self.show_callouts_var = tk.BooleanVar(value=annotations.get("show_callouts", True))
+        tk.Checkbutton(frame, text="Draw callouts on screenshots (default for all screens)",
+                       variable=self.show_callouts_var).grid(row=7, column=0, columnspan=2, **pad)
+        self.fig_border_var = tk.BooleanVar(value=self.style_config.figures.get("border_enabled", True))
+        tk.Checkbutton(frame, text="Thin border around screenshots",
+                       variable=self.fig_border_var).grid(row=8, column=0, columnspan=2, **pad)
+        tk.Label(frame, text="Individual screens can override boxes/callouts in the Review window.",
+                 font=("Arial", 9, "italic"), fg="#555555").grid(row=9, column=0, columnspan=2, **pad)
+
     def setup_numbering_tab(self):
         frame = self.tab_numbering
         pad = dict(padx=10, pady=8, sticky="w")
@@ -452,67 +467,83 @@ class StyleEditorDialog(tk.Toplevel):
             self.destroy()
             StyleEditorDialog(self.parent, self.client_key)
 
+    def _merge_section(self, section: str, values: dict) -> None:
+        """Update one style section in place, keeping keys this form doesn't edit."""
+        current = self.style_config.raw.get(section)
+        if not isinstance(current, dict):
+            current = {}
+        current.update(values)
+        self.style_config.raw[section] = current
+
     def save_style(self):
         """Converts form inputs back into self.style_config schema and writes to yaml."""
         try:
             # 1. Page
-            self.style_config.raw["page"] = {
+            self._merge_section("page", {
                 "size": self.pg_size_var.get(),
                 "margin_top_cm": self.margin_vars["margin_top_cm"].get(),
                 "margin_bottom_cm": self.margin_vars["margin_bottom_cm"].get(),
                 "margin_left_cm": self.margin_vars["margin_left_cm"].get(),
                 "margin_right_cm": self.margin_vars["margin_right_cm"].get()
-            }
+            })
 
             # 2. Fonts
-            self.style_config.raw["fonts"] = {
+            self._merge_section("fonts", {
                 "body_family": self.body_font_var.get(),
                 "body_size_pt": self.body_size_var.get(),
                 "heading_family": self.heading_font_var.get()
-            }
+            })
 
             # 3. Colors
-            self.style_config.raw["colors"] = {
+            self._merge_section("colors", {
                 k: entry.get().strip().replace("#", "") for k, entry in self.color_entries.items()
-            }
+            })
 
             # 4. Headings
-            self.style_config.raw["headings"] = {
+            self._merge_section("headings", {
                 f"h{lvl}_size_pt": self.heading_size_vars[lvl].get() for lvl in [1, 2, 3, 4]
-            }
+            })
             for lvl in [1, 2, 3, 4]:
                 self.style_config.raw["headings"][f"h{lvl}_bold"] = self.heading_bold_vars[lvl].get()
-                self.style_config.raw["headings"][f"h{lvl}_color"] = "primary" # Keep standard primary mapping
+                self.style_config.raw["headings"].setdefault(f"h{lvl}_color", "primary")
 
             # 5. Cover
-            self.style_config.raw["cover"] = {
+            self._merge_section("cover", {
                 "layout": self.cover_layout_var.get(),
                 "accent_bar_color": self.cover_accent_color_var.get(),
                 "title_size_pt": self.cover_title_size_var.get(),
                 "version_position": self.cover_ver_pos_var.get()
-            }
+            })
 
             # 6. Figures & Tables
-            self.style_config.raw["figures"] = {
+            self._merge_section("figures", {
                 "caption_position": self.fig_cap_pos_var.get(),
-                "caption_size_pt": self.fig_cap_size_var.get()
-            }
-            self.style_config.raw["tables"] = {
+                "caption_size_pt": self.fig_cap_size_var.get(),
+                "border_enabled": self.fig_border_var.get(),
+            })
+            self._merge_section("annotations", {
+                "show_boxes": self.show_boxes_var.get(),
+                "show_callouts": self.show_callouts_var.get(),
+            })
+            self._merge_section("tables", {
                 "caption_position": self.tbl_cap_pos_var.get(),
                 "zebra_striping": self.zebra_striping_var.get(),
-                "zebra_color": "table_zebra"
-            }
+                "zebra_color": self.style_config.tables.get("zebra_color", "table_zebra")
+            })
 
             # 7. Numbering
-            self.style_config.raw["numbering"] = {
+            self._merge_section("numbering", {
                 "figure_prefix": self.fig_prefix_var.get(),
                 "figure_format": self.fig_format_var.get(),
                 "table_prefix": self.tbl_prefix_var.get(),
                 "table_format": self.tbl_format_var.get()
-            }
+            })
 
             # Save style configuration
-            dest_path = self.styles_dir / f"{self.client_key}.yaml"
+            # Builder/annotator read clients/<key>/style.yaml first (see load_style)
+            from docbot import paths
+            dest_path = paths.clients_dir() / self.client_key / "style.yaml"
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
             self.style_config.save(dest_path)
             messagebox.showinfo("Success", f"Styling settings for client '{self.client_key}' saved successfully!")
             self.destroy()

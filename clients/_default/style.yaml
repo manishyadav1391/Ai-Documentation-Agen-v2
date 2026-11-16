@@ -110,7 +110,9 @@ footer:
   center_text: ""
 
 annotations:
-  callout_style: numbered        # numbered (legacy) | bubble_label (new)
+  show_boxes: true               # draw red region boxes on screenshots (per-screen override in Review)
+  show_callouts: true            # draw callout bubbles / badges (per-screen override in Review)
+  callout_style: numbered       # numbered (legacy) | bubble_label (new)
   region_style: outline          # overlay (legacy) | outline (new)
   region_border: "E5484D"
   region_border_width: 3

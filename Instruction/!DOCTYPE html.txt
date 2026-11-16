@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Debit Memo Agent</title>
+
+<style>
+body{
+    font-family:Arial,sans-serif;
+    background:#f4f6f9;
+    margin:0;
+    padding:20px;
+    color:#222;
+}
+
+.container{
+    max-width:1300px;
+    margin:auto;
+}
+
+.card{
+    background:#fff;
+    border-radius:12px;
+    padding:20px;
+    margin-bottom:20px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.08);
+}
+
+h2,h3{
+    margin-top:0;
+}
+
+label{
+    display:block;
+    font-weight:bold;
+    margin-bottom:6px;
+}
+
+select,
+input,
+textarea{
+    width:100%;
+    padding:10px;
+    border:1px solid #ccc;
+    border-radius:8px;
+    box-sizing:border-box;
+    margin-bottom:12px;
+}
+
+textarea{
+    min-height:80px;
+    resize:vertical;
+}
+
+.grid-2{
+    display:grid;
+    grid-template-columns:repeat(2,1fr);
+    gap:18px;
+}
+
+.grid-3{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:18px;
+}
+
+.grid-4{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:18px;
+}
+
+.table-wrapper{
+    width:100%;
+    overflow-x:auto;
+    padding-bottom:8px;
+}
+
+table{
+    width:100%;
+    min-width:1350px;
+    border-collapse:collapse;
+}
+
+th{
+    background:#1f2937;
+    color:white;
+    padding:12px;
+    text-align:left;
+    white-space:nowrap;
+}
+
+td{
+    border-bottom:1px solid #ddd;
+    padding:10px;
+    vertical-align:top;
+}
+
+button{
+    border:none;
+    border-radius:8px;
+    padding:10px 14px;
+    cursor:pointer;
+    font-size:14px;
+}
+
+.primary{
+    background:#2563eb;
+    color:white;
+}
+
+.success{
+    background:#16a34a;
+    color:white;
+    width:100%;
+    padding:14px;
+    font-size:16px;
+}
+
+.danger{
+    background:#dc2626;
+    color:white;
+}
+
+.secondary{
+    background:#6b7280;
+    color:white;
+}
+
+.small{
+    font-size:12px;
+    color:#6b7280;
+}
+
+.summary-box{
+    background:#f9fafb;
+    border:1px solid #e5e7eb;
+    border-radius:8px;
+    padding:12px;
+}
+
+.summary-box span{
+    display:block;
+    font-size:13px;
+    color:#6b7280;
+    margin-bottom:5px;
+}
+
+.summary-box strong{
+    font-size:15px;
+    color:#111827;
+}
+
+.audit-box{
+    background:#f9fafb;
+    border:1px dashed #9ca3af;
+    padding:14px;
+    border-radius:8px;
+    white-space:pre-wrap;
+    font-size:14px;
+}
+
+.batch-box,
+.serial-box{
+    background:#f8fafc;
+    border:1px solid #d1d5db;
+    border-radius:8px;
+    padding:12px;
+    margin-top:8px;
+}
+
+.batch-row{
+    display:grid;
+    grid-template-columns:2fr 1fr auto;
+    gap:8px;
+    margin-bottom:8px;
+}
+
+.badge{
+    display:inline-block;
+    padding:4px 8px;
+    border-radius:999px;
+    background:#eef2ff;
+    color:#3730a3;
+    font-size:12px;
+    margin-left:4px;
+}
+
+.debug{
+    display:none;
+    background:#111827;
+    color:#22c55e;
+    padding:15px;
+    border-radius:8px;
+    overflow:auto;
+    white-space:pre-wrap;
+    max-height:400px;
+}
+
+@media(max-width:900px){
+    .grid-2,
+    .grid-3,
+    .grid-4{
+        grid-template-columns:1fr;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="card">
+        <h2>Debit Memo Agent</h2>
+        <p class="small">
+            Generates debit memos for undercharges, additional services, or contractual adjustments with full audit trail.
+        </p>
+    </div>
+
+    <div class="card">
+        <h3>Header Details</h3>
+
+        <div class="grid-2">
+            <div>
+                <label>Customer</label>
+                <select id="customerSelect" onchange="updateAuditPreview()">
+                    <option value="">-- Select Customer --</option>
+                </select>
+            </div>
+
+            <div>
+                <label>Debit Memo Reason</label>
+                <select id="reason" onchange="updateAuditPreview(); updateTotals();">
+                    <option value="Undercharge">Undercharge</option>
+                    <option value="Additional Services">Additional Services</option>
+                    <option value="Contractual Adjustment">Contractual Adjustment</option>
+                    <option value="Freight / Handling Adjustment">Freight / Handling Adjustment</option>
+                    <option value="Price Difference">Price Difference</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="grid-3">
+            <div>
+                <label>Posting Date</label>
+                <input type="date" id="docDate" onchange="updateAuditPreview()">
+            </div>
+
+            <div>
+                <label>Due Date</label>
+                <input type="date" id="dueDate">
+            </div>
+
+            <div>
+                <label>Tax Date</label>
+                <input type="date" id="taxDate">
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div>
+                <label>Customer Reference / Memo Ref</label>
+                <input id="numAtCard" placeholder="Example: DM-REF-001" oninput="updateAuditPreview()">
+            </div>
+
+            <div>
+                <label>Base Document / Contract Reference</label>
+                <input id="baseReference" placeholder="Example: Invoice 123 / Contract ABC" oninput="updateAuditPreview()">
+            </div>
+        </div>
+
+        <label>Business Justification</label>
+        <textarea id="justification" placeholder="Explain why debit memo is required" oninput="updateAuditPreview()"></textarea>
+    </div>
+
+    <div class="card">
+        <h3>Debit Memo Lines</h3>
+
+        <button class="primary" onclick="addLine()">+ Add Line</button>
+
+        <br><br>
+
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>Warehouse</th>
+                        <th>Qty</th>
+                        <th>Unit Price</th>
+                        <th>Tax Code</th>
+                        <th>Batch / Serial</th>
+                        <th>Total</th>
+                        <th>Remove</th>
+                    </tr>
+                </thead>
+                <tbody id="lineBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Audit Trail Preview</h3>
+        <div id="auditPreview" class="audit-box">
+            Audit trail will appear here.
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Summary</h3>
+
+        <div class="grid-4">
+            <div class="summary-box">
+                <span>Total Lines</span>
+                <strong id="totalLines">0</strong>
+            </div>
+
+            <div class="summary-box">
+                <span>Subtotal</span>
+                <strong id="subtotal">0.00</strong>
+            </div>
+
+            <div class="summary-box">
+                <span>Reason</span>
+                <strong id="reasonSummary">Undercharge</strong>
+            </div>
+
+            <div class="summary-box">
+                <span>Status</span>
+                <strong>Ready for Review</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <button class="secondary" onclick="previewPayload()">Preview Payload</button>
+        <br><br>
+        <pre id="debugBox" class="debug"></pre>
+    </div>
+
+    <div class="card">
+        <button class="success" onclick="submitDebitMemo()">Create Debit Memo</button>
+    </div>
+
+</div>
+
+<script>
+
+//////////////////////////////////////////////////////
+// FLOW VARIABLES
+//////////////////////////////////////////////////////
+
+const customerData =
+##CustomerResponse##;
+
+const itemData =
+##ItemResponse##;
+
+const warehouseData =
+##WarehouseResponse##;
+
+const batchData =
+##BatchResponse##;
+
+const serialData =
+##SerialResponse##;
+
+//////////////////////////////////////////////////////
+// SAFE ARRAY PARSER
+//////////////////////////////////////////////////////
+
+function getArray(response){
+
+    if(!response){
+        return [];
+    }
+
+    if(Array.isArray(response)){
+        return response;
+    }
+
+    if(Array.isArray(response.value)){
+        return response.value;
+    }
+
+    if(response.data && Array.isArray(response.data.value)){
+        return response.data.value;
+    }
+
+    if(response.body && Array.isArray(response.body.value)){
+        return response.body.value;
+    }
+
+    if(typeof response === "string"){
+
+        try{
+
+            const parsed =
+            JSON.parse(response);
+
+            if(Array.isArray(parsed)){
+                return parsed;
+            }
+
+            if(Array.isArray(parsed.value)){
+                return parsed.value;
+            }
+
+            if(parsed.data && Array.isArray(parsed.data.value)){
+                return parsed.data.value;
+            }
+
+            if(parsed.body && Array.isArray(parsed.body.value)){
+                return parsed.body.value;
+            }
+
+        }catch(error){
+            return [];
+        }
+
+    }
+
+    return [];
+
+}
+
+const customers =
+getArray(customerData);
+
+const items =
+getArray(itemData);
+
+const warehouses =
+getArray(warehouseData);
+
+const batches =
+getArray(batchData);
+
+const serials =
+getArray(serialData);
+
+//////////////////////////////////////////////////////
+// ELEMENTS
+//////////////////////////////////////////////////////
+
+const customerSelect =
+document.getElementById("customerSelect");
+
+const lineBody =
+document.getElementById("lineBody");
+
+const auditPreview =
+document.getElementById("auditPreview");
+
+//////////////////////////////////////////////////////
+// HELPERS
+//////////////////////////////////////////////////////
+
+function today(){
+
+    return new Date().toISOString().split("T")[0];
+
+}
+
+function safeNumber(value){
+
+    const num =
+    Number(value);
+
+    return isNaN(num) ? 0 : num;
+
+}
+
+function escapeHtml(value){
+
+    return String(value || "")
+        .replace(/&/g,"&amp;")
+        .replace(/</g,"&lt;")
+        .replace(/>/g,"&gt;")
+        .replace(/"/g,"&quot;")
+        .replace(/'/g,"&#039;");
+
+}
+
+function selectedCustomer(){
+
+    const code =
+    customerSelect.value;
+
+    return customers.find(customer =>
+        String(customer.CardCode) === String(code)
+    );
+
+}
+
+function getItemByCode(itemCode){
+
+    return items.find(item =>
+        String(item.ItemCode) === String(itemCode)
+    );
+
+}
+
+function isBatchManaged(item){
+
+    return item &&
+    (
+        item.ManageBatchNumbers === "tYES" ||
+        item.ManageBatchNumbers === true
+    );
+
+}
+
+function isSerialManaged(item){
+
+    return item &&
+    (
+        item.ManageSerialNumbers === "tYES" ||
+        item.ManageSerialNumbers === true
+    );
+
+}
+
+function isInventoryItem(item){
+
+    return item &&
+    (
+        item.InventoryItem === "tYES" ||
+        item.InventoryItem === true
+    );
+
+}
+
+//////////////////////////////////////////////////////
+// INITIAL VALUES
+//////////////////////////////////////////////////////
+
+document.getElementById("docDate").value =
+today();
+
+document.getElementById("dueDate").value =
+today();
+
+document.getElementById("taxDate").value =
+today();
+
+document.getElementById("numAtCard").value =
+"DM-" + Date.now();
+
+//////////////////////////////////////////////////////
+// LOAD DROPDOWNS
+//////////////////////////////////////////////////////
+
+function loadCustomers(){
+
+    customerSelect.innerHTML =
+    `<option value="">-- Select Customer --</option>`;
+
+    customers.forEach(customer => {
+
+        const option =
+        document.createElement("option");
+
+        option.value =
+        customer.CardCode;
+
+        option.textContent =
+        `${customer.CardCode} - ${customer.CardName || ""}`;
+
+        customerSelect.appendChild(option);
+
+    });
+
+}
+
+function buildItemOptions(){
+
+    let html = `<option value="">-- Select Item --</option>`;
+
+    items.forEach(item => {
+        // Fallbacks in case SAP properties are missing
+        const itemCode = item.ItemCode || "";
+        const itemName = item.ItemName || "";
+
+        const batchBadge = isBatchManaged(item) ? " | Batch" : "";
+        const serialBadge = isSerialManaged(item) ? " | Serial" : "";
+        const inventoryBadge = isInventoryItem(item) ? " | Inventory" : " | Non-Inventory";
+
+        html += `<option value="${escapeHtml(itemCode)}">
+            ${escapeHtml(itemCode)} - ${escapeHtml(itemName)}${batchBadge}${serialBadge}${inventoryBadge}
+        </option>`;
+
+    });
+
+    return html;
+
+}
+
+function buildWarehouseOptions(){
+
+    let html =
+    `<option value="">-- Select Warehouse --</option>`;
+
+    warehouses.forEach(warehouse => {
+
+        html +=
+        `<option value="${escapeHtml(warehouse.WarehouseCode)}">
+            ${escapeHtml(warehouse.WarehouseCode)} - ${escapeHtml(warehouse.WarehouseName)}
+        </option>`;
+
+    });
+
+    return html;
+
+}
+
+//////////////////////////////////////////////////////
+// LINE MANAGEMENT
+//////////////////////////////////////////////////////
+
+let lineIndex =
+0;
+
+function addLine(){
+
+    const index =
+    lineIndex;
+
+    const row =
+    document.createElement("tr");
+
+    row.dataset.index =
+    index;
+
+    row.innerHTML =
+    `
+        <td>
+            <select id="item_${index}" onchange="onItemChange(${index})">
+                ${buildItemOptions()}
+            </select>
+        </td>
+
+        <td>
+            <div id="type_${index}" class="small">Select item</div>
+        </td>
+
+        <td>
+            <input id="desc_${index}" placeholder="Line description / audit note" oninput="updateAuditPreview()">
+        </td>
+
+        <td>
+            <select id="whs_${index}" onchange="onWarehouseChange(${index})">
+                ${buildWarehouseOptions()}
+            </select>
+        </td>
+
+        <td>
+            <input type="number" step="1" min="1" id="qty_${index}" value="1" oninput="onQtyChange(${index}); updateTotals();">
+        </td>
+
+        <td>
+            <input type="number" step="0.01" min="0" id="price_${index}" value="0" oninput="updateTotals()">
+        </td>
+
+        <td>
+            <input id="tax_${index}" placeholder="Optional">
+        </td>
+
+        <td>
+            <div id="allocation_${index}" class="small">No allocation required yet.</div>
+        </td>
+
+        <td id="total_${index}">0.00</td>
+
+        <td>
+            <button class="danger" onclick="removeLine(this)">X</button>
+        </td>
+    `;
+
+    lineBody.appendChild(row);
+
+    lineIndex++;
+
+    updateTotals();
+
+}
+
+function removeLine(button){
+
+    button.closest("tr").remove();
+
+    updateTotals();
+
+}
+
+function onItemChange(index){
+
+    renderItemType(index);
+
+    renderAllocationSection(index);
+
+    updateTotals();
+
+    updateAuditPreview();
+
+}
+
+function onWarehouseChange(index){
+
+    renderAllocationSection(index);
+
+}
+
+function onQtyChange(index){
+
+    renderAllocationSection(index);
+
+}
+
+function renderItemType(index){
+
+    const itemCode =
+    document.getElementById(`item_${index}`).value;
+
+    const item =
+    getItemByCode(itemCode);
+
+    const typeBox =
+    document.getElementById(`type_${index}`);
+
+    if(!item){
+
+        typeBox.innerHTML =
+        "Select item";
+
+        return;
+
+    }
+
+    let html =
+    "";
+
+    if(isInventoryItem(item)){
+        html += `<span class="badge">Inventory</span>`;
+    }else{
+        html += `<span class="badge">Non-Inventory</span>`;
+    }
+
+    if(isBatchManaged(item)){
+        html += `<span class="badge">Batch</span>`;
+    }
+
+    if(isSerialManaged(item)){
+        html += `<span class="badge">Serial</span>`;
+    }
+
+    if(!isBatchManaged(item) && !isSerialManaged(item)){
+        html += `<span class="badge">No Batch/Serial</span>`;
+    }
+
+    typeBox.innerHTML =
+    html;
+
+}
+
+//////////////////////////////////////////////////////
+// BATCH / SERIAL ALLOCATION
+//////////////////////////////////////////////////////
+
+function getAvailableBatches(itemCode){
+
+    return batches.filter(batch => {
+
+        const sameItem =
+        String(batch.ItemCode) === String(itemCode);
+
+        const notLocked =
+        batch.Status !== "bdsStatus_Locked";
+
+        return sameItem && notLocked;
+
+    });
+
+}
+
+function getAvailableSerials(itemCode){
+
+    return serials.filter(serial => {
+
+        return String(serial.ItemCode) === String(itemCode);
+
+    });
+
+}
+
+function renderAllocationSection(index){
+
+    const itemCode =
+    document.getElementById(`item_${index}`).value;
+
+    const item =
+    getItemByCode(itemCode);
+
+    const allocationBox =
+    document.getElementById(`allocation_${index}`);
+
+    if(!item){
+
+        allocationBox.innerHTML =
+        "No allocation required yet.";
+
+        return;
+
+    }
+
+    if(isBatchManaged(item)){
+
+        allocationBox.innerHTML =
+        `
+            <div class="batch-box">
+                <b>Batch Allocation</b>
+                <div id="batchRows_${index}"></div>
+                <button type="button" class="primary" onclick="addBatchRow(${index})">+ Add Batch</button>
+                <div class="small">Batch quantity total must equal line quantity.</div>
+            </div>
+        `;
+
+        addBatchRow(index);
+
+        return;
+
+    }
+
+    if(isSerialManaged(item)){
+
+        const availableSerials =
+        getAvailableSerials(itemCode);
+
+        let options =
+        "";
+
+        availableSerials.forEach(serial => {
+
+            const serialNo =
+            serial.SerialNumber || "";
+
+            const systemNo =
+            serial.SystemNumber || "";
+
+            if(!serialNo){
+                return;
+            }
+
+            const value =
+            escapeHtml(JSON.stringify({
+                SerialNumber:
+                serialNo,
+
+                SystemNumber:
+                systemNo
+            }));
+
+            options +=
+            `<option value="${value}">
+                ${escapeHtml(serialNo)} | System No: ${escapeHtml(systemNo)}
+            </option>`;
+
+        });
+
+        allocationBox.innerHTML =
+        `
+            <div class="serial-box">
+                <b>Serial Allocation</b>
+                <select id="serialSelect_${index}" multiple style="min-height:130px;">
+                    ${options}
+                </select>
+                <div class="small">Selected serial count must equal line quantity.</div>
+            </div>
+        `;
+
+        return;
+
+    }
+
+    allocationBox.innerHTML =
+    `<span class="small">No batch/serial allocation required.</span>`;
+
+}
+
+function addBatchRow(index){
+
+    const itemCode =
+    document.getElementById(`item_${index}`).value;
+
+    const availableBatches =
+    getAvailableBatches(itemCode);
+
+    const box =
+    document.getElementById(`batchRows_${index}`);
+
+    if(!box){
+        return;
+    }
+
+    const row =
+    document.createElement("div");
+
+    row.className =
+    "batch-row";
+
+    let options =
+    `<option value="">Select Batch</option>`;
+
+    availableBatches.forEach(batch => {
+
+        const batchNo =
+        batch.Batch || "";
+
+        if(!batchNo){
+            return;
+        }
+
+        options +=
+        `<option value="${escapeHtml(batchNo)}">
+            ${escapeHtml(batchNo)} | System No: ${escapeHtml(batch.SystemNumber || "")} | ${escapeHtml(batch.Status || "")}
+        </option>`;
+
+    });
+
+    row.innerHTML =
+    `
+        <select class="batchSelect">
+            ${options}
+        </select>
+
+        <input class="batchQty" type="number" min="0" step="1" placeholder="Qty">
+
+        <button type="button" class="danger" onclick="this.parentElement.remove()">Remove</button>
+    `;
+
+    box.appendChild(row);
+
+}
+
+function collectBatchNumbers(index,lineQty){
+
+    const box =
+    document.getElementById(`batchRows_${index}`);
+
+    if(!box){
+        return [];
+    }
+
+    const rows =
+    box.querySelectorAll(".batch-row");
+
+    const result =
+    [];
+
+    let total =
+    0;
+
+    rows.forEach(row => {
+
+        const batchNo =
+        row.querySelector(".batchSelect").value;
+
+        const qty =
+        safeNumber(row.querySelector(".batchQty").value);
+
+        if(batchNo && qty > 0){
+
+            result.push({
+                BatchNumber:
+                batchNo,
+
+                Quantity:
+                qty
+            });
+
+            total +=
+            qty;
+
+        }
+
+    });
+
+    if(total !== lineQty){
+
+        throw new Error(
+            `Batch quantity mismatch on line ${Number(index) + 1}. Line quantity is ${lineQty}, but selected batch quantity is ${total}.`
+        );
+
+    }
+
+    return result;
+
+}
+
+function collectSerialNumbers(index,lineQty){
+
+    const serialSelect =
+    document.getElementById(`serialSelect_${index}`);
+
+    if(!serialSelect){
+        return [];
+    }
+
+    const selected =
+    Array.from(serialSelect.selectedOptions).map(option =>
+        JSON.parse(option.value)
+    );
+
+    if(selected.length !== lineQty){
+
+        throw new Error(
+            `Serial count mismatch on line ${Number(index) + 1}. Quantity is ${lineQty}, but selected serial count is ${selected.length}.`
+        );
+
+    }
+
+    return selected.map(serial => {
+
+        return {
+            InternalSerialNumber:
+            serial.SerialNumber,
+
+            SystemSerialNumber:
+            Number(serial.SystemNumber)
+        };
+
+    });
+
+}
+
+//////////////////////////////////////////////////////
+// TOTALS / AUDIT
+//////////////////////////////////////////////////////
+
+function updateTotals(){
+
+    let subtotal =
+    0;
+
+    let count =
+    0;
+
+    const rows =
+    lineBody.querySelectorAll("tr");
+
+    rows.forEach(row => {
+
+        const index =
+        row.dataset.index;
+
+        const qty =
+        safeNumber(document.getElementById(`qty_${index}`).value);
+
+        const price =
+        safeNumber(document.getElementById(`price_${index}`).value);
+
+        const total =
+        qty * price;
+
+        document.getElementById(`total_${index}`).innerText =
+        total.toFixed(2);
+
+        subtotal +=
+        total;
+
+        count++;
+
+    });
+
+    document.getElementById("totalLines").innerText =
+    count;
+
+    document.getElementById("subtotal").innerText =
+    subtotal.toFixed(2);
+
+    document.getElementById("reasonSummary").innerText =
+    document.getElementById("reason").value;
+
+    updateAuditPreview();
+
+}
+
+function updateAuditPreview(){
+
+    const customer =
+    selectedCustomer();
+
+    const reason =
+    document.getElementById("reason").value;
+
+    const baseReference =
+    document.getElementById("baseReference").value;
+
+    const justification =
+    document.getElementById("justification").value;
+
+    const docDate =
+    document.getElementById("docDate").value;
+
+    const subtotal =
+    document.getElementById("subtotal").innerText;
+
+    const text =
+`Debit Memo Audit Trail
+Customer: ${customer ? customer.CardCode + " - " + customer.CardName : "Not selected"}
+Reason: ${reason}
+Base Reference: ${baseReference || "Not provided"}
+Posting Date: ${docDate}
+Calculated Amount: ${subtotal}
+Justification: ${justification || "Not provided"}
+Created By: SAP Copilot Debit Memo Agent
+Timestamp: ${new Date().toISOString()}`;
+
+    auditPreview.innerText =
+    text;
+
+}
+
+//////////////////////////////////////////////////////
+// PAYLOAD BUILDING
+//////////////////////////////////////////////////////
+
+function buildPayload(){
+
+    const customer =
+    selectedCustomer();
+
+    if(!customer){
+        throw new Error("Please select customer.");
+    }
+
+    const rows =
+    lineBody.querySelectorAll("tr");
+
+    if(rows.length === 0){
+        throw new Error("Please add at least one debit memo line.");
+    }
+
+    const documentLines =
+    [];
+
+    rows.forEach(row => {
+
+        const index =
+        row.dataset.index;
+
+        const itemCode =
+        document.getElementById(`item_${index}`).value;
+
+        const item =
+        getItemByCode(itemCode);
+
+        const desc =
+        document.getElementById(`desc_${index}`).value.trim();
+
+        const warehouse =
+        document.getElementById(`whs_${index}`).value.trim();
+
+        const qty =
+        safeNumber(document.getElementById(`qty_${index}`).value);
+
+        const price =
+        safeNumber(document.getElementById(`price_${index}`).value);
+
+        const taxCode =
+        document.getElementById(`tax_${index}`).value.trim();
+
+        if(!itemCode){
+            throw new Error(`Please select item on line ${Number(index) + 1}.`);
+        }
+
+        if(qty <= 0){
+            throw new Error(`Quantity must be greater than 0 on line ${Number(index) + 1}.`);
+        }
+
+        if(price < 0){
+            throw new Error(`Unit price cannot be negative on line ${Number(index) + 1}.`);
+        }
+
+        const line =
+        {
+            ItemCode:
+            itemCode,
+
+            Quantity:
+            qty,
+
+            UnitPrice:
+            price,
+
+            FreeText:
+            desc
+        };
+
+        if(taxCode){
+            line.TaxCode =
+            taxCode;
+        }
+
+        /*
+          WarehouseCode is required for inventory items.
+          For non-inventory/service items, we avoid sending warehouse.
+        */
+        if(isInventoryItem(item)){
+
+            if(!warehouse){
+                throw new Error(`Please select warehouse on line ${Number(index) + 1}.`);
+            }
+
+            line.WarehouseCode =
+            warehouse;
+
+        }
+
+        if(isBatchManaged(item)){
+
+            line.BatchNumbers =
+            collectBatchNumbers(index,qty);
+
+        }
+
+        if(isSerialManaged(item)){
+
+            line.SerialNumbers =
+            collectSerialNumbers(index,qty);
+
+        }
+
+        documentLines.push(line);
+
+    });
+
+    const reason =
+    document.getElementById("reason").value;
+
+    const baseReference =
+    document.getElementById("baseReference").value.trim();
+
+    const justification =
+    document.getElementById("justification").value.trim();
+
+    const comments =
+    `Debit Memo Reason: ${reason} | Base Ref: ${baseReference || "N/A"} | Justification: ${justification || "N/A"} | Created by Debit Memo Agent`;
+
+    const payload =
+    {
+        CardCode:
+        customer.CardCode,
+
+        DocDate:
+        document.getElementById("docDate").value,
+
+        DocDueDate:
+        document.getElementById("dueDate").value,
+
+        TaxDate:
+        document.getElementById("taxDate").value,
+
+        NumAtCard:
+        document.getElementById("numAtCard").value.trim(),
+
+        Comments:
+        comments,
+
+        JournalMemo:
+        `Debit Memo - ${reason}`,
+
+        DocumentLines:
+        documentLines
+    };
+
+    /*
+      If your SAP has UDF U_AuditTrail, uncomment this.
+      If SAP gives invalid property U_AuditTrail, keep it commented.
+    */
+    // payload.U_AuditTrail = auditPreview.innerText;
+
+    return payload;
+
+}
+
+function previewPayload(){
+
+    try{
+
+        const payload =
+        buildPayload();
+
+        const debugBox =
+        document.getElementById("debugBox");
+
+        debugBox.style.display =
+        "block";
+
+        debugBox.innerText =
+        JSON.stringify(payload,null,2);
+
+    }catch(error){
+
+        alert(error.message);
+
+    }
+
+}
+
+function submitDebitMemo(){
+
+    try{
+
+        const payload =
+        buildPayload();
+
+        window.parent.postMessage({
+
+            type:
+            "ORDER_FORM_SUBMIT",
+
+            payload:
+            payload
+
+        },"*");
+
+        alert("Debit Memo payload sent to flow.");
+
+    }catch(error){
+
+        alert(error.message);
+
+    }
+
+}
+
+//////////////////////////////////////////////////////
+// INIT
+//////////////////////////////////////////////////////
+
+loadCustomers();
+addLine();
+updateTotals();
+updateAuditPreview();
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,7 @@
+https://silverdemo.silvertouch.com:50000/b1s/v1/Items?$select=ItemCode,ItemName,InventoryItem,SalesItem,ManageBatchNumbers,ManageSerialNumbers&$filter=SalesItem eq 'tYES' and InventoryItem eq 'tNO' and ManageBatchNumbers eq 'tNO' and ManageSerialNumbers eq 'tNO'
+
+
+GET /b1s/v2/Items?$select=ItemCode,ItemName,InventoryItem,SalesItem,ManageBatchNumbers,ManageSerialNumbers&$filter=SalesItem eq 'tYES' and InventoryItem eq 'tNO'
+
+
+https://silverdemo.silvertouch.com:50000/b1s/v1/Items?$select=ItemCode,ItemName,InventoryItem,SalesItem,ManageBatchNumbers,ManageSerialNumbers&$filter=SalesItem eq 'tYES' and ManageBatchNumbers eq 'tNO' and ManageSerialNumbers eq 'tNO' and InventoryItem eq 'tNO'

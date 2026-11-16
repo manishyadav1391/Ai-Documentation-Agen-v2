@@ -173,9 +173,26 @@ class Figure(BaseModel):
 # Screen-level LLM content (what the generator writes)
 # ---------------------------------------------------------------------------
 
+class DocItem(BaseModel):
+    """One bullet in a writer-style section: "Name – Description. (Control type)"."""
+    name: str = ""
+    description: str = ""
+    control_type: str = ""              # Text, Dropdown, Button, Display, Checkbox, ...
+
+
+class DocSection(BaseModel):
+    """A grouped list on a screen, e.g. Search Filters, table columns, Buttons."""
+    title: str = ""                      # small bold sub-heading ("Search Filters")
+    lead_in: str = ""                    # optional sentence ("The X table contains the following details:")
+    items: list[DocItem] = PydanticField(default_factory=list)
+
+
 class ScreenContent(BaseModel):
     """LLM-generated content for a screen."""
     screen_name: str = ""
+    # Writer-style opening: navigation sentence + what the page lets users do (2-4 sentences)
+    intro: str = ""
+    sections: list[DocSection] = PydanticField(default_factory=list)
     purpose: str = ""
     navigation_sentence: str = ""
     path: str = ""
@@ -210,6 +227,9 @@ class Screen(BaseModel):
     figures: list[Figure] = PydanticField(default_factory=list)
     content: ScreenContent = PydanticField(default_factory=ScreenContent)
     reviewed: bool = False
+    # Per-screen annotation overrides; None = use client style default
+    show_boxes: Optional[bool] = None
+    show_callouts: Optional[bool] = None
 
 
 # ---------------------------------------------------------------------------

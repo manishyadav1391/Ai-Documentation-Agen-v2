@@ -37,6 +37,9 @@ def get_provider_instance(config):
     elif provider_name in ("openai_compat", "openai"):
         from providers.openai_compat import OpenAICompatProvider
         return OpenAICompatProvider()
+    elif provider_name == "openrouter":
+        from providers.openrouter import OpenRouterProvider
+        return OpenRouterProvider()
     elif provider_name == "ollama":
         from providers.ollama import OllamaProvider
         return OllamaProvider()
@@ -148,7 +151,8 @@ def run_pipeline(
         if not screen.content.screen_name or not screen.content.purpose:
             try:
                 update_progress(f"Screen {screen.index} of {num_screens}: pre-generating...")
-                generator.generate_screen(session, screen, client_profile=profile.data, progress_callback=progress_callback)
+                generator.generate_screen(session, screen, client_profile=profile.data,
+                                          progress_callback=progress_callback, session_dir=latest_session)
                 num_success += 1
             except Exception as e:
                 logger.error(f"Failed to pre-generate Screen {screen.index}: {e}")
@@ -174,22 +178,12 @@ def run_pipeline(
     # Save generated state
     SessionStore.save(session, latest_session)
 
-    # Write out legacy JSON files to ensure compatibility with manual_builder/
+    # Write out legacy JSON files (the builder itself reads session.json)
+    from docbot.export.content import screen_content_dict, screen_meta_dict
     for screen in session.screens:
         # Write screen_N_meta.json
         meta_path = latest_session / f"screen_{screen.index}_meta.json"
-        meta_data = {
-            "screen_index": screen.index,
-            "url": screen.url,
-            "title": screen.title,
-            "h1_text": screen.h1_text,
-            "breadcrumb": screen.breadcrumb,
-            "nav_trail": screen.nav_trail,
-            "state_of": screen.state_of,
-            "state_label": screen.state_label,
-            "screen_name": screen.content.screen_name or screen.title or f"Screen {screen.index}"
-        }
-        meta_path.write_text(json.dumps(meta_data, indent=2), encoding="utf-8")
+        meta_path.write_text(json.dumps(screen_meta_dict(screen), indent=2), encoding="utf-8")
 
         # Write screen_N_elements.json
         el_path = latest_session / f"screen_{screen.index}_elements.json"
@@ -203,40 +197,8 @@ def run_pipeline(
 
         # Write screen_N_content.json
         content_path = latest_session / f"screen_{screen.index}_content.json"
-        legacy_content = {
-            "screen_name": screen.content.screen_name,
-            "purpose": screen.content.purpose,
-            "navigation_instructions": screen.content.navigation_sentence,
-            "field_details": [
-                {
-                    "field_name": f.field_name,
-                    "utility": f.utility,
-                    "information": f.information,
-                    "sample": f.sample
-                }
-                for f in screen.fields
-            ],
-            "screen_documentation": {
-                "overview": screen.content.purpose,
-                "buttons": screen.content.buttons_doc,
-                "table_columns": screen.content.table_columns_doc,
-                "notes": screen.content.notes
-            },
-            "steps": [
-                {
-                    "n": s.n,
-                    "text": s.text,
-                    "kind": s.kind,
-                    "crop_path": s.crop_path
-                }
-                for s in screen.content.steps
-            ],
-            "figures": [
-                {"index": j + 1, "path": fig.path, "caption_note": fig.caption_note}
-                for j, fig in enumerate(screen.figures)
-            ]
-        }
-        content_path.write_text(json.dumps(legacy_content, indent=2, ensure_ascii=False), encoding="utf-8")
+        content_path.write_text(json.dumps(screen_content_dict(screen), indent=2, ensure_ascii=False),
+                                encoding="utf-8")
 
     # 3. Open the visual review UI
     update_progress("Opening Review UI...")

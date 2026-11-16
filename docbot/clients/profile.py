@@ -106,8 +106,20 @@ class ClientProfile:
             }
         glossary = glossary or {}
 
+        # Optional per-client writing guide replacing the built-in house style
+        # (prompts/v4/house_style.txt) — lets one client follow a different format.
+        house_style = ""
+        for name in ("house_style.txt", "house_style.md"):
+            hs_path = client_dir / name
+            if hs_path.is_file():
+                house_style = hs_path.read_text(encoding="utf-8")
+                break
+
         logger.info(f"[ClientProfile] Loaded profile for '{key}'.")
-        return cls(key=key, manifest=manifest, style=style, voice=voice, glossary=glossary)
+        profile = cls(key=key, manifest=manifest, style=style, voice=voice, glossary=glossary)
+        if house_style:
+            profile.data["house_style"] = house_style
+        return profile
 
     # ------------------------------------------------------------------ #
     # Convenience accessors

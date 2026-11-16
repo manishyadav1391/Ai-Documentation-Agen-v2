@@ -7,6 +7,8 @@ from docx.shared import Inches, Pt, RGBColor
 from manual_builder.utils import add_styled_heading, add_body_paragraph, hex_to_rgb
 from manual_builder.renderers.screen import render_screen
 from docbot.clients.profile import ClientProfile
+from docbot.processing.annotate import render_annotations
+from loguru import logger
 
 
 def render_module(doc, session_dir, style, numbering):
@@ -21,6 +23,7 @@ def render_module(doc, session_dir, style, numbering):
     intro = ""
     features = []
     screen_order = []
+    session_model = None
 
     # 1. Load module metadata from session.json (v3 primary source of truth)
     session_json_path = session_dir / "session.json"
@@ -64,6 +67,10 @@ def render_module(doc, session_dir, style, numbering):
         if not module_name:
             module_name = session_dir.name.replace("session_", "Session ").replace("_", " ").title()
 
+    # Folder-derived names come in lower case ("workflow automation")
+    if module_name and module_name == module_name.lower():
+        module_name = module_name.title()
+
     # Track current module numbering
     if numbering.mode == "continuous":
         # Increment level 1 section number dynamically
@@ -88,22 +95,30 @@ def render_module(doc, session_dir, style, numbering):
                 pass
         screen_order = sorted(list(set(screen_order)))
 
+    # (screen_idx, content_dict, meta_dict). session.json is the source of truth so
+    # that edits made in the Review window reach the manual; the per-screen JSON
+    # files are only used for legacy sessions without session.json.
     screens_to_render = []
-    for screen_idx in screen_order:
-        content_path = session_dir / f"screen_{screen_idx}_content.json"
-        meta_path = session_dir / f"screen_{screen_idx}_meta.json"
-        
-        if not content_path.exists() or not meta_path.exists():
-            continue
-
-        try:
-            with meta_path.open("r", encoding="utf-8") as f:
-                screen_meta = json.load(f)
-            if screen_meta.get("state_of") is not None:
+    if session_model is not None and session_model.screens:
+        from docbot.export.content import screen_content_dict, screen_meta_dict
+        for s in session_model.screens:
+            if s.state_of is not None:
                 continue
-            screens_to_render.append((screen_idx, content_path, meta_path))
-        except Exception:
-            pass
+            screens_to_render.append((s.index, screen_content_dict(s), screen_meta_dict(s)))
+    else:
+        for screen_idx in screen_order:
+            content_path = session_dir / f"screen_{screen_idx}_content.json"
+            meta_path = session_dir / f"screen_{screen_idx}_meta.json"
+            if not content_path.exists() or not meta_path.exists():
+                continue
+            try:
+                screen_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                if screen_meta.get("state_of") is not None:
+                    continue
+                content_data = json.loads(content_path.read_text(encoding="utf-8"))
+                screens_to_render.append((screen_idx, content_data, screen_meta))
+            except Exception as e:
+                logger.warning(f"Failed to load data for Screen {screen_idx}: {e}")
 
     # Check for single-screen module layout under continuous mode
     single_screen = (len(screens_to_render) == 1) and (numbering.mode == "continuous")
@@ -147,7 +162,7 @@ def render_module(doc, session_dir, style, numbering):
             p_feat_hdr = doc.add_paragraph()
             p_feat_hdr.paragraph_format.space_before = Pt(6)
             p_feat_hdr.paragraph_format.space_after = Pt(4)
-            r_feat_hdr = p_feat_hdr.add_run(f"The {module_name} module includes features for:")
+            r_feat_hdr = p_feat_hdr.add_run(f"The {module_name} module contains the following sub-modules:")
             r_feat_hdr.font.name = style.body_font
             r_feat_hdr.font.bold = True
             r_feat_hdr.font.size = Pt(style.body_size)
@@ -162,16 +177,7 @@ def render_module(doc, session_dir, style, numbering):
                 r_feat.font.color.rgb = hex_to_rgb(style.get_color("body_text"))
 
     # 6. Render Screens sequentially
-    for screen_idx, content_path, meta_path in screens_to_render:
-        try:
-            with content_path.open("r", encoding="utf-8") as f:
-                content_data = json.load(f)
-            with meta_path.open("r", encoding="utf-8") as f:
-                screen_meta = json.load(f)
-        except Exception as e:
-            print(f"[Warning] Failed to load data for Screen {screen_idx}: {e}")
-            continue
-
+    for screen_idx, content_data, screen_meta in screens_to_render:
         print(f"  Rendering screen: {content_data.get('screen_name', f'Screen {screen_idx}')}...")
 
         if single_screen:
@@ -191,6 +197,13 @@ def render_module(doc, session_dir, style, numbering):
                     return numbering.get_current_section_number()
                 return orig_enter_section(level)
             numbering.enter_section = single_screen_enter
+
+        # Re-render the annotated PNG so it honours the current box/callout settings
+        try:
+            render_annotations(session_dir, screen_idx,
+                               client_profile=profile.data if profile else None)
+        except Exception as e:
+            logger.warning(f"Could not re-render annotations for Screen {screen_idx}: {e}")
 
         render_screen(
             doc=doc,

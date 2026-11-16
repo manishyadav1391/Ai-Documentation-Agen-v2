@@ -6,6 +6,7 @@ from .base import Provider, load_prompt
 from .browser import BrowserProvider
 from .ollama import OllamaProvider
 from .openai_compat import OpenAICompatProvider
+from .openrouter import OpenRouterProvider
 from .anthropic_api import AnthropicProvider
 
 __all__ = [
@@ -14,5 +15,6 @@ __all__ = [
     "BrowserProvider",
     "OllamaProvider",
     "OpenAICompatProvider",
+    "OpenRouterProvider",
     "AnthropicProvider",
 ]
