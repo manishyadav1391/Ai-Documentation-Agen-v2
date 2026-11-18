@@ -8,6 +8,7 @@ Run via the launcher UI (``python -m docbot.ui.launcher``) or directly:
 import sys
 import json
 from pathlib import Path
+from typing import Any, Callable
 
 from loguru import logger
 
@@ -81,7 +82,8 @@ def run_pipeline(
         client_key=config.current_client,
         module_name=module_name or "",
         module_number=module_number,
-        progress_callback=progress_callback
+        progress_callback=progress_callback,
+        cancel_event=cancel_event,
     )
 
     if cancel_event and cancel_event.is_set():
@@ -95,7 +97,7 @@ def run_pipeline(
         sessions = [s for s in sessions if s.is_dir() and not s.name.startswith(".")]
         if not sessions:
             logger.error("No sessions found to process.")
-            return
+            return "no_screens"
         latest_session = sessions[-1]
 
     update_progress(f"Processing session data in: {latest_session.name}")
@@ -110,7 +112,7 @@ def run_pipeline(
 
     if num_screens == 0:
         logger.warning("No screens were captured. Exiting.")
-        return
+        return "no_screens"
 
     update_progress(f"--- PHASE 2: Processing {num_screens} Screens ---")
 
@@ -239,6 +241,7 @@ def run_pipeline(
     update_progress("--- PHASE 3: Module Assembly ---")
     assemble_module(latest_session)
     update_progress("Module processing completed successfully!")
+    return "ok"
 
 
 

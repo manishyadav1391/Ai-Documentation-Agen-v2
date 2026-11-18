@@ -89,6 +89,7 @@ class RecordView(ttk.Frame):
         self.active_frame.grid_forget()
         self.setup_frame.grid(row=0, column=0, sticky="nsew")
         self.recording_active = False
+        self.stop_btn.config(state=tk.NORMAL, text="Stop & Cancel")
         
     def show_active(self):
         self.setup_frame.grid_forget()
@@ -112,6 +113,14 @@ class RecordView(ttk.Frame):
         if not (start_url.startswith("http://") or start_url.startswith("https://")):
             messagebox.showerror("Validation Error", "Start URL must start with http:// or https://")
             return
+        if " " in start_url or not start_url.split("://", 1)[1].strip("/"):
+            messagebox.showerror("Validation Error", "Start URL is not a valid web address.")
+            return
+        if self.app.client_key not in self.app.client_list:
+            messagebox.showerror(
+                "Validation Error",
+                "No client is selected. Create or select a client on the Clients page first.")
+            return
         if not mod_name:
             messagebox.showerror("Validation Error", "Module Name cannot be empty.")
             return
@@ -123,6 +132,9 @@ class RecordView(ttk.Frame):
             except ValueError:
                 messagebox.showerror("Validation Error", "Module Number must be an integer (or blank).")
                 return
+            if mod_num < 1:
+                messagebox.showerror("Validation Error", "Module Number must be 1 or greater (or blank).")
+                return
                 
         if not self.app.check_and_install_browser():
             return
@@ -131,8 +143,12 @@ class RecordView(ttk.Frame):
         self.app.start_background_recording(start_url, mod_name, mod_num, self)
         
     def stop_recording(self):
+        # The recording thread closes the browser and reports back; the
+        # launcher then returns this view to the setup form. Switching back
+        # immediately would allow a second recording to start while the
+        # first browser is still shutting down.
+        self.stop_btn.config(state=tk.DISABLED, text="Stopping...")
         self.app.cancel_background_recording()
-        self.show_setup()
         
     def update_count(self, count):
         self.captured_count = count

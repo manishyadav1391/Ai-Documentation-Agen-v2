@@ -261,8 +261,13 @@ class WelcomeWizard(tk.Toplevel):
         form_frame.pack(fill=tk.X, pady=10)
         
         tk.Label(form_frame, text="Active Client:", font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(0, 10))
-        self.client_var = tk.StringVar(value=self.config.current_client)
-        self.client_combo = ttk.Combobox(form_frame, textvariable=self.client_var, values=self.launcher_ui.client_list, state="readonly", width=22)
+        clients = self.launcher_ui.client_list
+        current = self.config.current_client
+        if current not in clients:
+            # The configured client does not exist in this workspace.
+            current = clients[0] if clients else ""
+        self.client_var = tk.StringVar(value=current)
+        self.client_combo = ttk.Combobox(form_frame, textvariable=self.client_var, values=clients, state="readonly", width=22)
         self.client_combo.pack(side=tk.LEFT)
         
         tk.Button(self.container, text="Create New Client...", font=("Segoe UI", 9), command=self.create_new_client).pack(anchor="w", pady=15)
@@ -295,12 +300,10 @@ class WelcomeWizard(tk.Toplevel):
         self.key_entry = tk.Entry(form_frame, textvariable=self.key_var, show="•", width=35)
         self.key_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
         
+        self.show_key_var = tk.BooleanVar(value=False)
         def toggle():
-            if self.key_entry.cget("show") == "•":
-                self.key_entry.config(show="")
-            else:
-                self.key_entry.config(show="•")
-        self.show_btn = ttk.Checkbutton(form_frame, text="Show", command=toggle)
+            self.key_entry.config(show="" if self.show_key_var.get() else "•")
+        self.show_btn = ttk.Checkbutton(form_frame, text="Show", variable=self.show_key_var, command=toggle)
         self.show_btn.grid(row=1, column=2, sticky="w")
         
         self.test_btn = tk.Button(form_frame, text="Test Connection", font=("Segoe UI", 9), command=self.test_connection)
@@ -319,9 +322,10 @@ class WelcomeWizard(tk.Toplevel):
                  "Click Finish to launch the Control Panel.", wraplength=500, justify=tk.LEFT, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
                  
     def create_new_client(self):
-        self.launcher_ui.new_client()
+        self.launcher_ui.new_client(parent=self)
         self.client_combo.config(values=self.launcher_ui.client_list)
-        self.client_var.set(self.launcher_ui.client_key)
+        if self.launcher_ui.client_key in self.launcher_ui.client_list:
+            self.client_var.set(self.launcher_ui.client_key)
         
     def on_provider_change(self, event):
         provider = self.provider_var.get()
@@ -420,8 +424,16 @@ class WelcomeWizard(tk.Toplevel):
     def go_next(self):
         if self.step == 1:
             client = self.client_var.get()
+            if client not in self.launcher_ui.client_list:
+                messagebox.showerror(
+                    "Client Required",
+                    "No client profile is selected.\n"
+                    "Click 'Create New Client...' to create one before continuing.",
+                    parent=self,
+                )
+                return
             self.launcher_ui.change_client(client)
-            
+
             self.step += 1
             self.show_step()
         elif self.step == 2:
@@ -429,19 +441,22 @@ class WelcomeWizard(tk.Toplevel):
             self.config.provider = provider
             save_config(self.config)
             reload_config()
-            self.launcher_ui.provider_var.set(provider)
-            
             if provider != "browser":
                 key = self.key_var.get().strip()
                 key_name = f"{provider}_api_key"
-                self.secrets[key_name] = key
-                try:
-                    secrets_path = paths.data_dir() / "secrets.yaml"
-                    with secrets_path.open("w", encoding="utf-8") as f:
-                        yaml.safe_dump(self.secrets, f, default_flow_style=False)
-                except Exception:
-                    pass
+                # An empty field must not wipe a key that is already stored
+                # (or one supplied through the .env file).
+                if key:
+                    self.secrets[key_name] = key
+                    try:
+                        secrets_path = paths.data_dir() / "secrets.yaml"
+                        with secrets_path.open("w", encoding="utf-8") as f:
+                            yaml.safe_dump(self.secrets, f, default_flow_style=False)
+                    except Exception as e:
+                        logger.error(f"Could not save secrets.yaml: {e}")
+                        messagebox.showerror("Error", f"Could not save the API key:\n{e}", parent=self)
             self.launcher_ui.check_provider_status()
+            self.launcher_ui.update_status_bar()
             
             self.step += 1
             self.show_step()
@@ -517,6 +532,8 @@ class ClientSettingsDialog(tk.Toplevel):
                     return yaml.safe_load(f) or {}
             except Exception:
                 pass
+        return {}
+
     def build_ui(self):
         scroll = ScrollableFrame(self)
         scroll.pack(fill=tk.BOTH, expand=True)
@@ -556,7 +573,7 @@ class ClientSettingsDialog(tk.Toplevel):
 
         ttk.Label(t1, text="Document Version:").grid(row=4, column=0, sticky="w", pady=5)
         self.version_entry = ttk.Entry(t1, width=15)
-        self.version_entry.insert(0, self.manifest_data.get("version", "1.0"))
+        self.version_entry.insert(0, str(self.manifest_data.get("version", "1.0")))
         self.version_entry.grid(row=4, column=1, sticky="w", padx=5, pady=5)
 
         ttk.Label(t1, text="Revision Prepared By:").grid(row=5, column=0, sticky="w", pady=5)
@@ -595,14 +612,14 @@ class ClientSettingsDialog(tk.Toplevel):
 
         ttk.Label(t2, text="Primary Color (Hex):").grid(row=2, column=0, sticky="w", pady=5)
         self.primary_entry = ttk.Entry(t2, width=12)
-        p_val = self.style_data["colors"].get("primary", "1B365D")
+        p_val = str(self.style_data["colors"].get("primary", "1B365D"))
         self.primary_entry.insert(0, f"#{p_val}" if not p_val.startswith("#") else p_val)
         self.primary_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
         ttk.Button(t2, text="Pick...", command=lambda: self.pick_color(self.primary_entry)).grid(row=2, column=2, sticky="w", padx=2, pady=5)
 
         ttk.Label(t2, text="Secondary Color (Hex):").grid(row=3, column=0, sticky="w", pady=5)
         self.secondary_entry = ttk.Entry(t2, width=12)
-        s_val = self.style_data["colors"].get("secondary", "D97706")
+        s_val = str(self.style_data["colors"].get("secondary", "D97706"))
         self.secondary_entry.insert(0, f"#{s_val}" if not s_val.startswith("#") else s_val)
         self.secondary_entry.grid(row=3, column=1, sticky="w", padx=5, pady=5)
         ttk.Button(t2, text="Pick...", command=lambda: self.pick_color(self.secondary_entry)).grid(row=3, column=2, sticky="w", padx=2, pady=5)
@@ -636,7 +653,7 @@ class ClientSettingsDialog(tk.Toplevel):
         
         ttk.Label(t2, text="Callout color:").grid(row=8, column=0, sticky="w", pady=5)
         self.callout_color_entry = ttk.Entry(t2, width=12)
-        cc_val = annot.get("callout_border", "E5484D")
+        cc_val = str(annot.get("callout_border", "E5484D"))
         self.callout_color_entry.insert(0, f"#{cc_val}" if not cc_val.startswith("#") else cc_val)
         self.callout_color_entry.grid(row=8, column=1, sticky="w", padx=5, pady=5)
         ttk.Button(t2, text="Pick...", command=lambda: self.pick_color(self.callout_color_entry)).grid(row=8, column=2, sticky="w", padx=2, pady=5)
@@ -790,10 +807,34 @@ class ClientSettingsDialog(tk.Toplevel):
             messagebox.showerror("Validation Error", "Client Display Name cannot be empty.")
             return
 
+        hex_re = re.compile(r"[0-9A-Fa-f]{6}")
         primary = self.primary_entry.get().strip().replace("#", "")
         secondary = self.secondary_entry.get().strip().replace("#", "")
-        if len(primary) != 6 or len(secondary) != 6:
-            messagebox.showerror("Validation Error", "Accent colors must be valid 6-character hex strings.")
+        if not hex_re.fullmatch(primary) or not hex_re.fullmatch(secondary):
+            messagebox.showerror("Validation Error",
+                                 "Primary and Secondary colors must be valid 6-character hex values (for example #1B365D).",
+                                 parent=self)
+            return
+
+        cc_color = self.callout_color_entry.get().strip().replace("#", "")
+        if not hex_re.fullmatch(cc_color):
+            messagebox.showerror("Validation Error",
+                                 "Callout color must be a valid 6-character hex value (for example #E5484D).",
+                                 parent=self)
+            return
+
+        version = self.version_entry.get().strip()
+        if not version:
+            messagebox.showerror("Validation Error", "Document Version cannot be empty.", parent=self)
+            return
+
+        try:
+            body_size = float(self.font_size_spin.get().strip())
+            if not 6 <= body_size <= 36:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Validation Error",
+                                 "Body Font Size must be a number between 6 and 36.", parent=self)
             return
 
         # 2. Write Tab 1 (Identity -> manifest.yaml)
@@ -801,7 +842,7 @@ class ClientSettingsDialog(tk.Toplevel):
         self.manifest_data["system_name"] = self.system_name_entry.get().strip()
         self.manifest_data["system_acronym"] = self.system_acronym_entry.get().strip()
         self.manifest_data["manual_title"] = self.manual_title_entry.get().strip()
-        self.manifest_data["version"] = self.version_entry.get().strip()
+        self.manifest_data["version"] = version
         self.manifest_data["prepared_by"] = self.prepared_by_entry.get().strip()
         self.manifest_data["reviewed_by"] = self.reviewed_by_entry.get().strip()
         self.manifest_data["approved_by"] = self.approved_by_entry.get().strip()
@@ -809,21 +850,16 @@ class ClientSettingsDialog(tk.Toplevel):
 
         # 3. Write Tab 2 (Branding -> style.yaml)
         self.style_data["fonts"]["body_family"] = self.font_combo.get()
-        try:
-            self.style_data["fonts"]["body_size_pt"] = float(self.font_size_spin.get().strip())
-        except ValueError:
-            pass
-        self.style_data["colors"]["primary"] = primary
-        self.style_data["colors"]["secondary"] = secondary
+        self.style_data["fonts"]["body_size_pt"] = body_size
+        self.style_data["colors"]["primary"] = primary.upper()
+        self.style_data["colors"]["secondary"] = secondary.upper()
         self.style_data["logo"]["path"] = self.logo_entry.get().strip()
-        self.style_data["fields"] = {"style": self.field_style_var.get()}
+        if not isinstance(self.style_data.get("fields"), dict):
+            self.style_data["fields"] = {}
+        self.style_data["fields"]["style"] = self.field_style_var.get()
 
         # Save annotations settings
-        cc_color = self.callout_color_entry.get().strip().replace("#", "")
-        if cc_color and len(cc_color) != 6:
-            messagebox.showerror("Validation Error", "Callout color must be a valid 6-character hex string.")
-            return
-            
+        cc_color = cc_color.upper()
         if "annotations" not in self.style_data or not isinstance(self.style_data["annotations"], dict):
             self.style_data["annotations"] = {}
             
@@ -849,13 +885,17 @@ class ClientSettingsDialog(tk.Toplevel):
 
         # 4. Write cover page metadata (cover.yaml)
         self.resolved_content_dir.mkdir(parents=True, exist_ok=True)
-        cover_data = {
-            "document_title": self.manual_title_entry.get().strip(),
-            "title_lines": [
+        # Keep every other key already present in cover.yaml (version label,
+        # extra subtitles, ...) and never store blank title lines: a list of
+        # empty strings would suppress the cover page's automatic title.
+        cover_data = dict(self.cover_data) if isinstance(self.cover_data, dict) else {}
+        cover_data["document_title"] = self.manual_title_entry.get().strip()
+        cover_data["title_lines"] = [
+            line for line in (
                 self.cover_title_entry.get().strip(),
-                self.cover_subtitle_entry.get().strip()
-            ]
-        }
+                self.cover_subtitle_entry.get().strip(),
+            ) if line
+        ]
         try:
             with self.cover_path.open("w", encoding="utf-8") as f:
                 yaml.safe_dump(cover_data, f, sort_keys=False, allow_unicode=True)
@@ -965,6 +1005,9 @@ class LauncherUI:
 
         self.active_view_key = "record"
         self.show("record")
+
+        # Reflect the real provider state in the indicator dot from the start
+        self.check_provider_status()
 
         # Welcome wizard / startup warning checks
         if not self.config.first_run_done:
@@ -1106,10 +1149,15 @@ class LauncherUI:
                 pass
 
     def open_style_editor(self):
-        ClientSettingsDialog(self.root, self)
+        if self.client_key not in self.client_list:
+            messagebox.showwarning("Warning", "Please select or create a client first.")
+            return
+        dlg = ClientSettingsDialog(self.root, self)
+        self.root.wait_window(dlg)
 
     def open_settings_dialog(self):
-        SettingsDialog(self.root, self)
+        dlg = SettingsDialog(self.root, self)
+        self.root.wait_window(dlg)
         self.check_provider_status()
         self.update_status_bar()
 
@@ -1125,31 +1173,54 @@ class LauncherUI:
         else:
             messagebox.showerror("Error", f"Client directory does not exist: {folder}")
 
-    def new_client(self):
-        new_key = filedialog.asksaveasfilename(
-            initialdir=str(paths.clients_dir()),
-            title="Enter New Client Key (Acronym Name)",
-            filetypes=[]
+    def new_client(self, parent=None):
+        parent = parent or self.root
+        new_key = simpledialog.askstring(
+            "New Client",
+            "Enter a short key for the new client (for example: ncb).\n"
+            "Use letters, digits and underscores only.",
+            parent=parent,
         )
-        if not new_key:
+        if new_key is None:
             return
-        
-        new_key = Path(new_key).name.lower().replace(" ", "_")
+
+        new_key = new_key.strip().lower().replace(" ", "_")
         if not new_key:
+            messagebox.showerror("Validation Error", "Client key cannot be empty.", parent=parent)
             return
-            
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_]{0,39}", new_key):
+            messagebox.showerror(
+                "Validation Error",
+                "Client key may contain only letters, digits and underscores, "
+                "must start with a letter or digit, and be at most 40 characters long.",
+                parent=parent,
+            )
+            return
+
         new_client_path = paths.clients_dir() / new_key
-        
-        if new_client_path.exists():
-            messagebox.showerror("Error", f"Client '{new_key}' already exists.")
+
+        if new_client_path.exists() or new_key in self.client_list:
+            messagebox.showerror("Error", f"Client '{new_key}' already exists.", parent=parent)
             return
-            
+
+        default_client_dir = paths.clients_dir() / "_default"
+        if not default_client_dir.is_dir():
+            messagebox.showerror(
+                "Error",
+                f"The default client template folder is missing:\n{default_client_dir}\n\n"
+                "Restore the 'clients/_default' folder and try again.",
+                parent=parent,
+            )
+            return
+
         try:
-            shutil.copytree(str(paths.clients_dir() / "_default"), str(new_client_path))
-            
+            shutil.copytree(str(default_client_dir), str(new_client_path))
+
             new_content_path = new_client_path / "content"
-            shutil.copytree(str(paths.content_dir() / "_default"), str(new_content_path))
-            
+            default_content_dir = paths.content_dir() / "_default"
+            if default_content_dir.is_dir() and not new_content_path.exists():
+                shutil.copytree(str(default_content_dir), str(new_content_path))
+
             manifest_file = new_client_path / "manifest.yaml"
             if manifest_file.exists():
                 with manifest_file.open("r", encoding="utf-8") as f:
@@ -1162,11 +1233,22 @@ class LauncherUI:
             self.client_list = get_available_clients()
             self.client_combo.config(values=self.client_list)
             self.change_client(new_key)
-            
-            self.open_style_editor()
-            messagebox.showinfo("Success", f"Client profile '{new_key}' created successfully!")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to create new client: {e}")
+            logger.exception("Failed to create new client")
+            # Do not leave a half-created client folder behind.
+            shutil.rmtree(new_client_path, ignore_errors=True)
+            self.client_list = get_available_clients()
+            self.client_combo.config(values=self.client_list)
+            messagebox.showerror("Error", f"Failed to create new client: {e}", parent=parent)
+            return
+
+        messagebox.showinfo(
+            "Success",
+            f"Client profile '{new_key}' created successfully!\n\n"
+            "The Client Settings window will now open so you can fill in its details.",
+            parent=parent,
+        )
+        self.open_style_editor()
 
     def check_and_install_browser(self) -> bool:
         if check_chromium_exists():
@@ -1258,7 +1340,7 @@ class LauncherUI:
                     else:
                         self.recording_queue.put(("progress", msg))
                         
-                run_pipeline(
+                outcome = run_pipeline(
                     client_key=self.client_key,
                     start_url=start_url,
                     module_name=mod_name,
@@ -1266,7 +1348,10 @@ class LauncherUI:
                     progress_callback=progress_cb,
                     cancel_event=self.recording_cancel_event
                 )
-                self.recording_queue.put(("done", "Pipeline finished successfully!"))
+                if outcome == "no_screens":
+                    self.recording_queue.put(("no_screens", "No screens were captured."))
+                else:
+                    self.recording_queue.put(("done", "Pipeline finished successfully!"))
             except KeyboardInterrupt:
                 self.recording_queue.put(("cancelled", "Pipeline execution cancelled by user."))
             except Exception as e:
@@ -1320,6 +1405,19 @@ class LauncherUI:
                         self.update_status_bar("Ready.")
                         self.refresh_active_view()
                         return
+                    elif msg_type == "no_screens":
+                        if self.recording_progress_win:
+                            self.recording_progress_win.destroy()
+                            self.recording_progress_win = None
+                        self.recording_view.show_setup()
+                        messagebox.showwarning(
+                            "Nothing Recorded",
+                            "The recording ended without any captured screens, so no module was created.\n\n"
+                            "Middle-click on a page to capture it before you finish the session."
+                        )
+                        self.update_status_bar("Ready.")
+                        self.refresh_active_view()
+                        return
                     elif msg_type == "cancelled":
                         if self.recording_progress_win:
                             self.recording_progress_win.destroy()
@@ -1365,7 +1463,7 @@ class LauncherUI:
         
         def run_thread():
             try:
-                progress_win.log("Starting master manual compilation...")
+                msg_queue.put(("log", "Starting master manual compilation..."))
                 assemble_master_manual(ordered_sessions, output_path, client_key=self.client_key)
                 msg_queue.put(("done", "Compilation finished!"))
             except Exception as e:
@@ -1379,7 +1477,10 @@ class LauncherUI:
             try:
                 while True:
                     msg_type, data = msg_queue.get_nowait()
-                    if msg_type == "done":
+                    if msg_type == "log":
+                        progress_win.log(data)
+                        progress_win.set_status(data)
+                    elif msg_type == "done":
                         progress_win.destroy()
                         messagebox.showinfo("Success", f"Professional Manual compiled successfully!\nSaved to: {output_path.absolute()}")
                         os.startfile(str(output_path.parent.resolve()))

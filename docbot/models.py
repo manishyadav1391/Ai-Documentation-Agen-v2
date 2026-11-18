@@ -425,7 +425,7 @@ def migrate_legacy(session_dir: Path) -> SessionModel:
                 )
                 # Migrate field_details
                 for fd in content_raw.get("field_details", []):
-                    screen.fields.append(PydanticField(
+                    screen.fields.append(FieldDetail(
                         id=fd.get("field_name", "").replace(" ", "_")[:20] or f"f{len(screen.fields)}",
                         element_id="",
                         field_name=fd.get("field_name", ""),

@@ -36,7 +36,7 @@ import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from loguru import logger
 from playwright.sync_api import sync_playwright, Page
@@ -231,7 +231,9 @@ class CaptureSession:
             "screen_index": 1,
             "pending_events": [],
             "last_viewport_screenshot": None,
+            "request_page_id": None,     # page/tab the last gesture came from
         }
+        self.cancelled = False
         self._lock = threading.Lock()
         self._pages: dict[str, Page] = {}
 
@@ -239,8 +241,14 @@ class CaptureSession:
     # Main entry point
     # ------------------------------------------------------------------ #
 
-    def run(self) -> SessionModel:
-        """Launch browser, record, return the completed session model."""
+    def run(self, cancel_event: Any = None) -> SessionModel:
+        """Launch browser, record, return the completed session model.
+
+        The session ends when the writer double middle-clicks, closes the
+        browser window, or when *cancel_event* (a ``threading.Event``) is set
+        by the "Stop & Cancel" button of the launcher. In the last case
+        ``self.cancelled`` is True and nothing is saved.
+        """
         logger.info(f"Starting capture session → {self.session_dir.name}")
         logger.info(f"Start URL: {self.session.start_url}")
 
@@ -279,19 +287,52 @@ class CaptureSession:
             logger.info("=" * 55)
 
             # Event loop — non-blocking poll
+            browser_closed = False
             while not self._state["quit"]:
-                page.wait_for_timeout(100)
-                self._process_pending_captures(page)
+                if cancel_event is not None and cancel_event.is_set():
+                    self.cancelled = True
+                    logger.info("Recording cancelled from the launcher.")
+                    break
+                try:
+                    live_pages = [pg for pg in context.pages if not pg.is_closed()]
+                    if not live_pages or not browser.is_connected():
+                        browser_closed = True
+                        break
+                    # Poll on a page that is still open (the first tab may
+                    # have been closed while the writer works in another one).
+                    poll_page = page if not page.is_closed() else live_pages[-1]
+                    poll_page.wait_for_timeout(100)
+                    # Capture the tab the gesture was made in, not always tab 1.
+                    target = self._pages.get(self._state.get("request_page_id") or "")
+                    if target is None or target.is_closed():
+                        target = poll_page
+                    self._process_pending_captures(target)
+                except Exception as e:
+                    if _is_closed_error(e) or not browser.is_connected():
+                        browser_closed = True
+                        break
+                    raise
+
+            if browser_closed:
+                logger.info("Browser window was closed by the writer; ending the session.")
 
             # Save auth state for next session
-            state_path.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                context.storage_state(path=str(state_path))
-                logger.info(f"Auth state saved to {state_path.name}")
-            except Exception as e:
-                logger.warning(f"Could not save auth state: {e}")
+            if not self.cancelled and not browser_closed:
+                state_path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    context.storage_state(path=str(state_path))
+                    logger.info(f"Auth state saved to {state_path.name}")
+                except Exception as e:
+                    logger.warning(f"Could not save auth state: {e}")
 
-            browser.close()
+            try:
+                browser.close()
+            except Exception as e:
+                logger.debug(f"Browser already closed: {e}")
+
+        if self.cancelled:
+            logger.info("Session cancelled; nothing saved.")
+            return self.session
 
         SessionStore.save(self.session, self.session_dir)
         logger.info(
@@ -316,10 +357,18 @@ class CaptureSession:
         except Exception:
             pass  # add_init_script covers future navigations
 
+        def _from_this_page(handler):
+            # Remember which tab the gesture came from so that tab is captured.
+            def _wrapped() -> None:
+                with self._lock:
+                    self._state["request_page_id"] = page_id
+                handler()
+            return _wrapped
+
         page.expose_function("docbotEvent", self._on_js_event)
-        page.expose_function("triggerCapture", self._on_capture)
-        page.expose_function("triggerFullPageCapture", self._on_full_page_capture)
-        page.expose_function("triggerStateCapture", self._on_state_capture)
+        page.expose_function("triggerCapture", _from_this_page(self._on_capture))
+        page.expose_function("triggerFullPageCapture", _from_this_page(self._on_full_page_capture))
+        page.expose_function("triggerStateCapture", _from_this_page(self._on_state_capture))
         page.expose_function("triggerQuit", self._on_quit)
 
         logger.debug(f"Page {page_id} instrumented.")
@@ -687,6 +736,15 @@ class CaptureSession:
         return figures
 
 
+def _is_closed_error(exc: Exception) -> bool:
+    """True when *exc* means the page / context / browser has gone away."""
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(marker in text for marker in (
+        "targetclosed", "target closed", "has been closed", "browser closed",
+        "connection closed", "target page, context or browser",
+    ))
+
+
 def _get_page_context(page: Page) -> dict:
     try:
         return page.evaluate(_PAGE_CONTEXT_JS)
@@ -702,6 +760,7 @@ def run_capture_session(
     module_name: str = "",
     module_number: int | None = None,
     progress_callback: Callable[[str], None] | None = None,
+    cancel_event: Any = None,
 ) -> SessionModel:
     """Convenience entry point called from main.py / launcher."""
     cfg = get_config()
@@ -713,6 +772,8 @@ def run_capture_session(
         module_number=module_number,
     )
     session.progress_callback = progress_callback
-    model = session.run()
+    model = session.run(cancel_event=cancel_event)
     model._session_dir = session.session_dir
+    if session.cancelled:
+        raise KeyboardInterrupt("Recording cancelled.")
     return model

@@ -59,7 +59,7 @@ class SettingsDialog(tk.Toplevel):
         key_entry_frame.pack(fill=tk.X, pady=(0, 10))
         self.anthropic_key_entry = tk.Entry(key_entry_frame, textvariable=self.anthropic_key_var, show="•", width=50)
         self.anthropic_key_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.anthropic_show_btn = ttk.Checkbutton(key_entry_frame, text="Show", command=lambda: self.toggle_show(self.anthropic_key_entry))
+        self.anthropic_show_btn = ttk.Checkbutton(key_entry_frame, text="Show", variable=self._show_var(), command=lambda: self.toggle_show(self.anthropic_key_entry))
         self.anthropic_show_btn.pack(side=tk.RIGHT, padx=5)
 
         tk.Label(anthropic_frame, text="Model Name:", font=("Segoe UI", 9)).pack(anchor="w", pady=(5, 2))
@@ -80,13 +80,14 @@ class SettingsDialog(tk.Toplevel):
         notebook.add(openai_frame, text="OpenAI Compat")
 
         tk.Label(openai_frame, text="OpenAI API Key:", font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(5, 2))
-        self.openai_key_var = tk.StringVar(value=self.secrets.get("openai_api_key", ""))
+        # "openai_api_key" is the legacy name; config.get_api_key() reads "openai_compat_api_key"
+        self.openai_key_var = tk.StringVar(value=self.secrets.get("openai_compat_api_key") or self.secrets.get("openai_api_key", ""))
         
         okey_entry_frame = tk.Frame(openai_frame)
         okey_entry_frame.pack(fill=tk.X, pady=(0, 10))
         self.openai_key_entry = tk.Entry(okey_entry_frame, textvariable=self.openai_key_var, show="•", width=50)
         self.openai_key_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.openai_show_btn = ttk.Checkbutton(okey_entry_frame, text="Show", command=lambda: self.toggle_show(self.openai_key_entry))
+        self.openai_show_btn = ttk.Checkbutton(okey_entry_frame, text="Show", variable=self._show_var(), command=lambda: self.toggle_show(self.openai_key_entry))
         self.openai_show_btn.pack(side=tk.RIGHT, padx=5)
 
         tk.Label(openai_frame, text="Base URL Endpoint:", font=("Segoe UI", 9)).pack(anchor="w", pady=(5, 2))
@@ -118,7 +119,7 @@ class SettingsDialog(tk.Toplevel):
         olkey_entry_frame.pack(fill=tk.X, pady=(0, 10))
         self.ollama_key_entry = tk.Entry(olkey_entry_frame, textvariable=self.ollama_key_var, show="•", width=50)
         self.ollama_key_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.ollama_show_btn = ttk.Checkbutton(olkey_entry_frame, text="Show", command=lambda: self.toggle_show(self.ollama_key_entry))
+        self.ollama_show_btn = ttk.Checkbutton(olkey_entry_frame, text="Show", variable=self._show_var(), command=lambda: self.toggle_show(self.ollama_key_entry))
         self.ollama_show_btn.pack(side=tk.RIGHT, padx=5)
 
         tk.Label(ollama_frame, text="Ollama Host URL:", font=("Segoe UI", 9)).pack(anchor="w", pady=(5, 2))
@@ -151,7 +152,7 @@ class SettingsDialog(tk.Toplevel):
         orkey_entry_frame.pack(fill=tk.X, pady=(0, 2))
         self.openrouter_key_entry = tk.Entry(orkey_entry_frame, textvariable=self.openrouter_key_var, show="•", width=50)
         self.openrouter_key_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Checkbutton(orkey_entry_frame, text="Show", command=lambda: self.toggle_show(self.openrouter_key_entry)).pack(side=tk.RIGHT, padx=5)
+        ttk.Checkbutton(orkey_entry_frame, text="Show", variable=self._show_var(), command=lambda: self.toggle_show(self.openrouter_key_entry)).pack(side=tk.RIGHT, padx=5)
         if not self.openrouter_key_var.get() and os.environ.get(or_cfg.api_key_env):
             tk.Label(openrouter_frame, text=f"Leave blank to use {or_cfg.api_key_env} from .env (currently set).",
                      font=("Segoe UI", 8, "italic"), fg="#64748B").pack(anchor="w", pady=(0, 8))
@@ -182,6 +183,14 @@ class SettingsDialog(tk.Toplevel):
 
         tk.Button(btn_frame, text="Cancel", width=12, command=self.destroy).pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="Save Settings", bg="lightgreen", font=("Segoe UI", 10, "bold"), width=15, command=self.save_settings).pack(side=tk.RIGHT, padx=5)
+
+    def _show_var(self):
+        """A BooleanVar for a 'Show' checkbox, kept alive for the dialog's lifetime."""
+        if not hasattr(self, "_show_vars"):
+            self._show_vars = []
+        var = tk.BooleanVar(self, value=False)
+        self._show_vars.append(var)
+        return var
 
     def toggle_show(self, entry_widget):
         if entry_widget.cget("show") == "•":
@@ -346,6 +355,41 @@ class SettingsDialog(tk.Toplevel):
     def save_settings(self):
         # Update config.yaml values
         try:
+            token_values = {
+                name: int(var.get().strip())
+                for name, var in (
+                    ("anthropic", self.anthropic_max_tokens_var),
+                    ("openai_compat", self.openai_max_tokens_var),
+                    ("ollama", self.ollama_max_tokens_var),
+                    ("openrouter", self.openrouter_max_tokens_var),
+                )
+            }
+            if any(v <= 0 for v in token_values.values()):
+                raise ValueError("max tokens must be positive")
+        except ValueError:
+            messagebox.showerror("Error", "Max Tokens must be a whole number greater than zero.", parent=self)
+            return
+
+        for label, var in (
+            ("Anthropic Model Name", self.anthropic_model_var),
+            ("OpenAI Compat Model Name", self.openai_model_var),
+            ("OpenAI Compat Base URL", self.openai_base_url_var),
+            ("Ollama Model Name", self.ollama_model_var),
+            ("Ollama Host URL", self.ollama_host_var),
+            ("OpenRouter Model", self.openrouter_model_var),
+        ):
+            if not var.get().strip():
+                messagebox.showerror("Error", f"{label} cannot be empty.", parent=self)
+                return
+        for label, var in (
+            ("OpenAI Compat Base URL", self.openai_base_url_var),
+            ("Ollama Host URL", self.ollama_host_var),
+        ):
+            if not var.get().strip().lower().startswith(("http://", "https://")):
+                messagebox.showerror("Error", f"{label} must start with http:// or https://", parent=self)
+                return
+
+        try:
             self.config.providers.anthropic.model = self.anthropic_model_var.get().strip()
             self.config.providers.anthropic.max_tokens = int(self.anthropic_max_tokens_var.get().strip())
 
@@ -366,17 +410,19 @@ class SettingsDialog(tk.Toplevel):
 
             save_config(self.config)
             reload_config()
-        except ValueError:
-            messagebox.showerror("Error", "Max tokens must be a valid integer.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save settings: {e}", parent=self)
             return
 
-        # Update secrets.yaml
-        secrets_data = {
+        # Update secrets.yaml -- keep any other keys already stored there
+        secrets_data = dict(self.secrets) if isinstance(self.secrets, dict) else {}
+        secrets_data.pop("openai_api_key", None)   # legacy name, superseded below
+        secrets_data.update({
             "anthropic_api_key": self.anthropic_key_var.get().strip(),
-            "openai_api_key": self.openai_key_var.get().strip(),
+            "openai_compat_api_key": self.openai_key_var.get().strip(),
             "ollama_api_key": self.ollama_key_var.get().strip(),
             "openrouter_api_key": self.openrouter_key_var.get().strip(),
-        }
+        })
 
         try:
             with self.secrets_path.open("w", encoding="utf-8") as f:

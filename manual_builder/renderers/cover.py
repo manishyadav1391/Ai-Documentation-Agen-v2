@@ -91,7 +91,10 @@ def render_cover(doc, section_entry, manifest, style):
     cover_style = style.cover
 
     # ── Resolve title lines (data-driven with sensible fallbacks) ─────────
-    title_lines = cover_data.get("title_lines") or []
+    title_lines = [
+        line for line in (cover_data.get("title_lines") or [])
+        if line is not None and str(line).strip()
+    ]
     if not title_lines:
         # Fallback: build a sane default from manifest so clients that haven't
         # migrated to cover.yaml still get a usable cover.

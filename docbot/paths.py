@@ -16,8 +16,16 @@ def bundle_dir() -> Path:
     return Path(__file__).resolve().parent.parent   # repo root
 
 def data_dir() -> Path:
-    """User-writable workspace: config, clients, sessions, outputs, logs."""
-    if is_frozen():
+    """User-writable workspace: config, clients, sessions, outputs, logs.
+
+    Set the ``DOCBOT_DATA_DIR`` environment variable to point DocBot at a
+    different workspace (used for isolated test runs and for keeping separate
+    workspaces side by side).
+    """
+    override = os.environ.get("DOCBOT_DATA_DIR", "").strip()
+    if override:
+        base = Path(override).expanduser().resolve()
+    elif is_frozen():
         base = Path(os.environ.get("LOCALAPPDATA", Path.home())) / APP_NAME
     else:
         base = Path(__file__).resolve().parent.parent   # repo root in dev

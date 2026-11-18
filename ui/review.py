@@ -401,6 +401,7 @@ class ReviewSessionUI:
         self.current_screen_idx = index
         self.screen = self.session.screens[self.current_screen_idx]
         self.active_region_id = None
+        self.selected_step_idx = None
         self._undo_stack = []
         self.preview_mode = False
         self.preview_btn.config(text="👁️ Preview")
@@ -992,7 +993,11 @@ class ReviewSessionUI:
             if not dialog.result:
                 self._undo_stack.pop()   # drawing cancelled → discard undo entry
                 return
-            new_rid = f"r{len(self.screen.regions) + 1}"
+            existing_ids = {r.id for r in self.screen.regions}
+            n_new = len(self.screen.regions) + 1
+            while f"r{n_new}" in existing_ids:
+                n_new += 1
+            new_rid = f"r{n_new}"
             self.screen.regions.append(Region(
                 id=new_rid, role=dialog.result["role"],
                 bounding_box=BBox(x=x1, y=y1, width=w, height=h),
@@ -1201,26 +1206,29 @@ class ReviewSessionUI:
             self.selected_step_idx = sel[0]
 
     def _add_step(self):
-        txt = simpledialog.askstring("Add Step", "Enter step instruction text:")
-        if txt:
+        txt = simpledialog.askstring("Add Step", "Enter step instruction text:", parent=self.root)
+        if txt and txt.strip():
             n = len(self.screen.content.steps) + 1
-            self.screen.content.steps.append(Step(n=n, text=txt, kind="action"))
+            self.screen.content.steps.append(Step(n=n, text=txt.strip(), kind="action"))
             self._refresh_steps_listbox()
 
     def _edit_step(self):
         """Edit selected step text in place (E3)."""
-        if self.selected_step_idx is None:
-            messagebox.showwarning("Warning", "Select a step first.")
+        if self.selected_step_idx is None or self.selected_step_idx >= len(self.screen.content.steps):
+            messagebox.showwarning("Warning", "Select a step first.", parent=self.root)
             return
         step = self.screen.content.steps[self.selected_step_idx]
         txt = simpledialog.askstring("Edit Step", "Step instruction text:",
-                                     initialvalue=step.text)
-        if txt:
+                                     initialvalue=step.text, parent=self.root)
+        if txt and txt.strip():
             step.text = txt.strip()
             self._refresh_steps_listbox()
             self.steps_listbox.select_set(self.selected_step_idx)
 
     def _delete_step(self):
+        if self.selected_step_idx is None or self.selected_step_idx >= len(self.screen.content.steps):
+            messagebox.showwarning("Warning", "Select a step first.", parent=self.root)
+            return
         if self.selected_step_idx is not None:
             self.screen.content.steps.pop(self.selected_step_idx)
             for idx, s in enumerate(self.screen.content.steps):
@@ -1229,7 +1237,8 @@ class ReviewSessionUI:
             self.selected_step_idx = None
 
     def _move_step(self, direction: int):
-        if self.selected_step_idx is None:
+        if self.selected_step_idx is None or self.selected_step_idx >= len(self.screen.content.steps):
+            messagebox.showwarning("Warning", "Select a step first.", parent=self.root)
             return
         idx = self.selected_step_idx
         target = idx + direction
@@ -1337,6 +1346,11 @@ class ReviewSessionUI:
             except ValueError:
                 messagebox.showerror("Error", "Coordinates must be integers.", parent=dialog)
                 return
+            if x_val < 0 or y_val < 0 or w_val < 8 or h_val < 8:
+                messagebox.showerror(
+                    "Error", "X and Y cannot be negative, and Width and Height must be at least 8.",
+                    parent=dialog)
+                return
             label_val = entry_label.get().strip()
             if not label_val:
                 messagebox.showerror("Error", "Label cannot be blank.", parent=dialog)
@@ -1436,8 +1450,14 @@ class ReviewSessionUI:
         threading.Thread(target=run_regen, daemon=True).start()
 
     def _regen_steps(self):
+        if not self.screen.content.steps:
+            messagebox.showwarning("Warning", "This screen has no steps to regenerate.", parent=self.root)
+            return
         custom = simpledialog.askstring("Custom Instructions",
-                                        "Enter guide notes for steps (optional):")
+                                        "Enter guide notes for steps (optional):",
+                                        parent=self.root)
+        if custom is None:
+            return          # Cancel pressed
         cfg = get_config()
         from main import get_provider_instance
         provider = get_provider_instance(cfg)
@@ -1456,6 +1476,8 @@ class ReviewSessionUI:
                 raw = provider.chat(prompt)
                 from providers.base import _strip_fences
                 steps_arr = json.loads(_strip_fences(raw))
+                if not isinstance(steps_arr, list) or not steps_arr:
+                    raise ValueError("The AI did not return a list of steps.")
                 if isinstance(steps_arr, list):
                     def success(arr=steps_arr):
                         self.screen.content.steps = [
@@ -1526,13 +1548,7 @@ class ReviewSessionUI:
         else:
             self.preview_mode = False
             self.preview_btn.config(text="👁️ Preview")
-            img_path = self.session_dir / self.screen.screenshot
-            if not img_path.exists():
-                img_path = self.session_dir / f"screen_{self.screen.index}.png"
-            if img_path.exists():
-                self.pil_image = Image.open(img_path)
-                self.orig_w, self.orig_h = self.pil_image.size
-            self._render_canvas()
+            self._load_canvas_image()
             self.status_var.set("Edit mode.")
 
 
@@ -1620,6 +1636,17 @@ class _FieldEditDialog:
 
 def open_review_ui(session_dir: Path, screen_index: int, total_screens: int = None) -> str:
     """Wrapper entry point loaded by main.py."""
+    try:
+        has_screens = bool(SessionStore.load(Path(session_dir)).screens)
+    except Exception:
+        has_screens = False
+    if not has_screens:
+        logger.warning(f"Review UI not opened: no screens in {Path(session_dir).name}")
+        if tk._default_root is not None:
+            messagebox.showwarning(
+                "Nothing to Review",
+                f"The session '{Path(session_dir).name}' has no captured screens.")
+        return "empty"
     if tk._default_root is not None:
         window = tk.Toplevel(tk._default_root)
         app = ReviewSessionUI(window, session_dir, initial_idx=screen_index)

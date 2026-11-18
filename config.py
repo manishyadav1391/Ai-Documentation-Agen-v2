@@ -186,9 +186,14 @@ class Config(BaseModel):
             try:
                 with secrets_path.open("r", encoding="utf-8") as f:
                     secrets = yaml.safe_load(f) or {}
-                sec_key = f"{p}_api_key"
-                if sec_key in secrets and secrets[sec_key]:
-                    return secrets[sec_key]
+                # "openai_api_key" is the name older builds of the Settings
+                # dialog used for the openai_compat provider.
+                candidates = [f"{p}_api_key"]
+                if p == "openai_compat":
+                    candidates.append("openai_api_key")
+                for sec_key in candidates:
+                    if secrets.get(sec_key):
+                        return str(secrets[sec_key]).strip()
             except Exception as e:
                 logger.warning(f"Could not read secrets.yaml: {e}")
                 
@@ -238,7 +243,15 @@ def get_config(config_path: Any = None) -> Config:
 def reload_config(config_path: Any = None) -> Config:
     """Reload config from disk; useful when the user edits settings at runtime."""
     global _config_instance
-    _config_instance = load_config(config_path)
+    fresh = load_config(config_path)
+    if _config_instance is None:
+        _config_instance = fresh
+    else:
+        # Update the existing object in place: the launcher, the review window
+        # and the dialogs all keep a reference to it, and replacing the object
+        # would leave them holding (and later re-saving) stale settings.
+        for field_name in type(fresh).model_fields:
+            setattr(_config_instance, field_name, getattr(fresh, field_name))
     logger.info("Configuration reloaded from disk.")
     return _config_instance
 
