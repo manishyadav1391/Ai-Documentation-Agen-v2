@@ -15,7 +15,7 @@ import httpx
 from loguru import logger
 
 from config import get_config
-from .base import Provider
+from .base import Provider, is_local_endpoint
 
 
 class OpenAICompatProvider(Provider):
@@ -52,7 +52,8 @@ class OpenAICompatProvider(Provider):
         return self.config_key
 
     def is_available(self) -> bool:
-        return bool(self.base_url and self.api_key)
+        # Local servers (LM Studio, vLLM, llama.cpp, Ollama /v1) usually need no key
+        return bool(self.base_url and (self.api_key or is_local_endpoint(self.base_url)))
 
     def chat(self, prompt: str, *, max_tokens: int | None = None,
              temperature: float = 0.2, system: str | None = None) -> str:

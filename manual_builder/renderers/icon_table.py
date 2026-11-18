@@ -5,24 +5,28 @@ from typing import Any, Dict
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import yaml
-from manual_builder.utils import add_styled_heading, set_cell_background, set_cell_margins, set_table_borders, hex_to_rgb
+from manual_builder.utils import (
+    add_styled_heading, set_cell_background, set_cell_margins, set_table_borders, hex_to_rgb,
+    load_yaml_file, source_file, scaled_widths, set_table_width,
+)
 
 
-def render_icon_table(doc, section_entry, manifest, style, heading_text: str = None):
+def render_icon_table(doc, section_entry, manifest, style, heading_text: str = None, heading_level: int = 2):
     """
     Renders reference tables for buttons/icons.
     If icons/images are skipped or not found, renders a clean text-based table instead.
     """
     title = heading_text if heading_text is not None else section_entry.heading
     if title:
-        add_styled_heading(doc, title, level=2, style_config=style)
+        add_styled_heading(doc, title, level=heading_level, style_config=style)
 
-    table_path = manifest.get_source_path(section_entry.source)
-    if not table_path.exists():
+    table_path = source_file(section_entry, manifest, "icon_table")
+    if table_path is None:
         return
 
-    with table_path.open("r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
+    data = load_yaml_file(table_path)
+    if not isinstance(data, dict):
+        data = {}
 
     columns = data.get("columns", ["Name", "Description"])
     rows = data.get("rows", [])
@@ -38,17 +42,18 @@ def render_icon_table(doc, section_entry, manifest, style, heading_text: str = N
     set_table_borders(table, border_color)
 
     # Set column widths based on column count
+    # (scaled down to the section's usable width, e.g. 6.27" on A4)
     if num_cols == 3:
-        table.columns[0].width = Inches(1.5)  # Button/Icon
-        table.columns[1].width = Inches(1.8)  # Name
-        table.columns[2].width = Inches(3.2)  # Description
+        set_table_width(table, scaled_widths(doc, [1.5, 1.8, 3.2]))  # Button/Icon | Name | Description
+    elif num_cols == 2:
+        set_table_width(table, scaled_widths(doc, [2.2, 4.3]))
     else:
-        table.columns[0].width = Inches(2.2)
-        table.columns[1].width = Inches(4.3)
+        set_table_width(table, scaled_widths(doc, [6.5 / num_cols] * num_cols))
 
     # Render Header
-    hdr_bg = style.tables.get("header_bg", style.table_header_bg)
-    hdr_fg = style.tables.get("header_fg", style.table_header_fg)
+    # Values may be colour aliases ("table_header_bg") — resolve before writing w:fill
+    hdr_bg = style.get_color(style.tables.get("header_bg") or style.table_header_bg)
+    hdr_fg = style.get_color(style.tables.get("header_fg") or style.table_header_fg)
     hdr_bold = style.tables.get("header_bold", True)
 
     hdr_cells = table.rows[0].cells

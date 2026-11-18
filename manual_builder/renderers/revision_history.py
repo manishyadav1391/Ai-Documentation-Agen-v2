@@ -14,7 +14,8 @@ from typing import Any, Dict
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from manual_builder.utils import (
-    set_cell_background, set_cell_margins, set_table_borders, hex_to_rgb, add_styled_heading
+    set_cell_background, set_cell_margins, set_table_borders, hex_to_rgb, add_styled_heading,
+    load_yaml_file, usable_width_emu, set_table_width,
 )
 
 
@@ -29,14 +30,14 @@ def render_revision_history(doc, section_entry, manifest, style):
 
     # Load data from source file
     history_path = manifest.get_source_path(section_entry.source) if section_entry.source else None
-    import yaml
 
     data = {}
-    if history_path and history_path.exists():
-        with history_path.open("r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
+    if history_path and history_path.is_file():
+        data = load_yaml_file(history_path)
+    if not isinstance(data, dict):
+        data = {}
 
-    entries = data.get("entries", [])
+    entries = [e for e in (data.get("entries") or []) if isinstance(e, dict)]
 
     # B4: auto-seed one row if entries list is empty
     if not entries:
@@ -61,13 +62,13 @@ def render_revision_history(doc, section_entry, manifest, style):
     border_color = style.revision_history.get("border_color", "CCCCCC")
     set_table_borders(table, border_color)
 
-    # Evenly distribute width across 6.2" usable content width
-    col_width = Inches(6.2 / num_cols)
-    for c_idx in range(num_cols):
-        table.columns[c_idx].width = col_width
+    # Evenly distribute width across the section's usable content width
+    col_width = usable_width_emu(doc) // num_cols
+    set_table_width(table, [col_width] * num_cols)
 
-    hdr_bg = style.revision_history.get("header_bg", style.table_header_bg)
-    hdr_fg = style.revision_history.get("header_fg", style.table_header_fg)
+    # Values may be colour aliases ("table_header_bg") — resolve before writing w:fill
+    hdr_bg = style.get_color(style.revision_history.get("header_bg") or style.table_header_bg)
+    hdr_fg = style.get_color(style.revision_history.get("header_fg") or style.table_header_fg)
 
     hdr_cells = table.rows[0].cells
     for idx, text in enumerate(headers):

@@ -28,6 +28,9 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from manual_builder.utils import (
     remove_table_borders,
     hex_to_rgb,
+    load_yaml_file,
+    usable_width_emu,
+    set_table_width,
 )
 from manual_builder.build_error import BuildError
 
@@ -83,10 +86,10 @@ def render_cover(doc, section_entry, manifest, style):
     cover_data = {}
     if section_entry.source:
         cover_path = manifest.get_source_path(section_entry.source)
-        if cover_path.exists():
-            import yaml
-            with cover_path.open("r", encoding="utf-8") as f:
-                cover_data = yaml.safe_load(f) or {}
+        if cover_path.is_file():
+            cover_data = load_yaml_file(cover_path)
+            if not isinstance(cover_data, dict):
+                cover_data = {}
 
     cover_style = style.cover
 
@@ -133,8 +136,8 @@ def render_cover(doc, section_entry, manifest, style):
         # Two-image side-by-side layout (matches ministry-logo + program-banner style)
         banner_table = doc.add_table(rows=1, cols=2)
         banner_table.autofit = False
-        banner_table.columns[0].width = Inches(3.25)
-        banner_table.columns[1].width = Inches(3.25)
+        half_w = usable_width_emu(doc) // 2
+        set_table_width(banner_table, [half_w, half_w])
         remove_table_borders(banner_table)
 
         left_cell = banner_table.cell(0, 0)
@@ -162,7 +165,7 @@ def render_cover(doc, section_entry, manifest, style):
         p_banner.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p_banner.paragraph_format.space_after = Pt(0)
         try:
-            p_banner.add_run().add_picture(str(single_banner), width=Inches(6.5))
+            p_banner.add_run().add_picture(str(single_banner), width=usable_width_emu(doc))
         except Exception:
             pass
 

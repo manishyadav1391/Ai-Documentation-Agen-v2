@@ -457,6 +457,112 @@ def resolve_annotation_flags(screen, annot_style: dict | None) -> Tuple[bool, bo
     return show_boxes, show_callouts
 
 
+def _session_regions(session_dir: Path, screen_index: int):
+    """
+    Return ``(regions_data, screen)`` from ``session.json``.
+
+    ``regions_data`` is ``None`` when the legacy files should be used instead:
+    no ``session.json``, it could not be loaded, the screen is not in it, or
+    the screen has no regions at all (pre-v3 session).  Deleted regions stay
+    in the list (flagged), so "user deleted everything" is not confused with
+    "never detected".
+    """
+    if not (Path(session_dir) / "session.json").exists():
+        return None, None
+    try:
+        from docbot.models import SessionStore
+        session = SessionStore.load(Path(session_dir))
+    except Exception as e:
+        logger.warning(f"[Annotate] Could not load session.json; using legacy region files: {e}")
+        return None, None
+    screen = next((s for s in session.screens if s.index == screen_index), None)
+    if screen is None or not screen.regions:
+        return None, screen
+    return [r.model_dump() for r in screen.regions], screen
+
+
+def _legacy_regions(session_dir: Path, screen_index: int) -> list:
+    """Read ``screen_N_final.json`` / ``screen_N_regions.json`` (legacy sessions)."""
+    for rpath in [
+        session_dir / f"screen_{screen_index}_final.json",
+        session_dir / f"screen_{screen_index}_regions.json",
+    ]:
+        if rpath.exists():
+            try:
+                data = json.loads(rpath.read_text(encoding="utf-8"))
+                return data if isinstance(data, list) else []
+            except Exception as e:
+                logger.warning(f"Could not read regions from {rpath}: {e}")
+    return []
+
+
+def _num(value, default: float = 0.0) -> float:
+    """Coerce a JSON number (possibly null / string / garbage) to float."""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return default
+    return f if math.isfinite(f) else default
+
+
+def _style_int(style: dict, key: str, default: int) -> int:
+    """Read an int style value; fall back to *default* on malformed input."""
+    try:
+        return int(style.get(key, default))
+    except (TypeError, ValueError):
+        logger.warning(f"[Annotate] Invalid style value {key}={style.get(key)!r}; using {default}.")
+        return default
+
+
+def _region_label(r: dict) -> str:
+    label = r.get("label")
+    if isinstance(label, str) and label.strip():
+        return label
+    elements = r.get("elements_contained") or []
+    if isinstance(elements, list):
+        for el in elements:
+            if isinstance(el, str) and el.strip():
+                return el
+    return "Region"
+
+
+def _to_draw_region(r, dpr: float, screen_index: int) -> "_Region | None":
+    """Convert one region dict into a drawable ``_Region`` (None = skip)."""
+    if not isinstance(r, dict) or r.get("deleted"):
+        return None
+    bbox = r.get("bounding_box")
+    if not isinstance(bbox, dict) or not bbox:
+        return None
+    x, y = _num(bbox.get("x")), _num(bbox.get("y"))
+    w, h = _num(bbox.get("width")), _num(bbox.get("height"))
+    if w < 0 or h < 0:
+        logger.warning(f"[Annotate] Screen {screen_index}: region {r.get('id')!r} has a "
+                       f"negative size; normalising.")
+        if w < 0:
+            x, w = x + w, -w
+        if h < 0:
+            y, h = y + h, -h
+    cx, cy = r.get("callout_x"), r.get("callout_y")
+    return _Region(
+        x=int(x * dpr), y=int(y * dpr), w=int(w * dpr), h=int(h * dpr),
+        label=_region_label(r),
+        role=r.get("role") if isinstance(r.get("role"), str) else "filter_form",
+        callout_x=_num(cx) if cx is not None else None,
+        callout_y=_num(cy) if cy is not None else None,
+    )
+
+
+def render_all_annotations(session_dir: Path, client_profile: dict | None = None) -> None:
+    """Re-render the annotated PNG of every screen in ``session.json``."""
+    from docbot.models import SessionStore
+    session = SessionStore.load(Path(session_dir))
+    for screen in session.screens:
+        try:
+            render_annotations(Path(session_dir), screen.index, client_profile=client_profile)
+        except Exception as e:
+            logger.warning(f"Could not render annotations for Screen {screen.index}: {e}")
+
+
 def render_annotations(
     session_dir: Path,
     screen_index: int,
@@ -465,8 +571,10 @@ def render_annotations(
     """
     Render annotated screenshot for one screen.
 
-    Reads ``screen_{n}_regions.json`` (or equivalent in session.json),
-    overlays callouts/boxes/badges, saves ``screen_{n}_annotated.png``.
+    Reads the screen's regions from ``session.json`` (falling back to the
+    legacy ``screen_{n}_final.json`` / ``_regions.json`` files only for
+    sessions without them), overlays callouts/boxes/badges and saves
+    ``screen_{n}_annotated.png``.
     """
     cfg = get_config()
 
@@ -479,40 +587,30 @@ def render_annotations(
         if variant.exists() and not img_path.exists():
             img_path = variant
 
-    final_json_path = session_dir / f"screen_{screen_index}_final.json"
-    regions_json_path = session_dir / f"screen_{screen_index}_regions.json"
     output_path = session_dir / f"screen_{screen_index}_annotated.png"
 
     if not img_path.exists():
         logger.warning(f"No screenshot for Screen {screen_index}; skipping annotation.")
         return
 
-    regions_data = []
-    for rpath in [final_json_path, regions_json_path]:
-        if rpath.exists():
-            try:
-                regions_data = json.loads(rpath.read_text(encoding="utf-8"))
-                break
-            except Exception as e:
-                logger.warning(f"Could not read regions from {rpath}: {e}")
+    # session.json is the source of truth (the Review window edits it for
+    # every screen, but only rewrites the active screen's legacy file).
+    dpr = 1.0
+    screen = None
+    regions_data, from_session = _session_regions(session_dir, screen_index)
+    if from_session is not None:
+        screen = from_session
+        dpr = _num(screen.device_pixel_ratio, 1.0)
+        if dpr <= 0:
+            dpr = 1.0
+    if regions_data is None:
+        regions_data = _legacy_regions(session_dir, screen_index)
 
     if not regions_data:
         logger.debug(f"No region data for Screen {screen_index}; copying raw screenshot.")
         import shutil
         shutil.copy(img_path, output_path)
         return
-
-    # Resolve DPI scale factor from session model
-    dpr = 1.0
-    screen = None
-    try:
-        from docbot.models import SessionStore
-        session = SessionStore.load(session_dir)
-        screen = next((s for s in session.screens if s.index == screen_index), None)
-        if screen:
-            dpr = screen.device_pixel_ratio
-    except Exception as e:
-        logger.debug(f"[Annotate] Could not load session for scaling check: {e}")
 
     if client_profile is None:
         try:
@@ -526,6 +624,8 @@ def render_annotations(
     from manual_builder.style_loader import StyleConfig
     style_cfg = StyleConfig(raw=profile.get("style", {}))
     annot_style = style_cfg.raw.get("annotations", {})
+    if not isinstance(annot_style, dict):
+        annot_style = {}
 
     show_boxes, show_callouts = resolve_annotation_flags(screen, annot_style)
     if not show_boxes and not show_callouts:
@@ -537,17 +637,22 @@ def render_annotations(
     callout_style =annot_style.get("callout_style", "numbered")
     callout_fill = _hex_to_rgb(style_cfg.get_color(annot_style.get("callout_fill", "FFFFFF")))
     callout_border = _hex_to_rgb(style_cfg.get_color(annot_style.get("callout_border", "E5484D")))
-    callout_border_width = int(annot_style.get("callout_border_width", 3))
+    callout_border_width = _style_int(annot_style, "callout_border_width", 3)
     callout_text_color = _hex_to_rgb(style_cfg.get_color(annot_style.get("callout_text_color", "E5484D")))
-    callout_font_size = int(annot_style.get("callout_font_size", 22))
-    callout_corner_radius = int(annot_style.get("callout_corner_radius", 12))
+    callout_font_size = max(1, _style_int(annot_style, "callout_font_size", 22))
+    callout_corner_radius = _style_int(annot_style, "callout_corner_radius", 12)
     
-    pad_x = int(annot_style.get("callout_padding_x", annot_style.get("callout_padding", [14, 8])[0]))
-    pad_y = int(annot_style.get("callout_padding_y", annot_style.get("callout_padding", [14, 8])[1]))
+    padding = annot_style.get("callout_padding", [14, 8])
+    if not (isinstance(padding, (list, tuple)) and len(padding) >= 2):
+        if padding != [14, 8]:
+            logger.warning(f"[Annotate] Invalid style value callout_padding={padding!r}; using [14, 8].")
+        padding = [14, 8]
+    pad_x = _style_int({"v": annot_style.get("callout_padding_x", padding[0])}, "v", 14)
+    pad_y = _style_int({"v": annot_style.get("callout_padding_y", padding[1])}, "v", 8)
     callout_padding = [pad_x, pad_y]
         
     callout_tail = bool(annot_style.get("callout_tail", True))
-    callout_tail_size = int(annot_style.get("callout_tail_size", 16))
+    callout_tail_size = _style_int(annot_style, "callout_tail_size", 16)
     
     if callout_style == "bubble_label":
         leader_line = False
@@ -559,19 +664,21 @@ def render_annotations(
     
     region_border_hex = annot_style.get("region_border", "E5484D")
     region_border_color = _hex_to_rgb(style_cfg.get_color(region_border_hex))
-    region_border_width = int(annot_style.get("region_border_width", 3))
-    region_corner_radius = int(annot_style.get("region_corner_radius", 6))
+    region_border_width = _style_int(annot_style, "region_border_width", 3)
+    region_corner_radius = _style_int(annot_style, "region_corner_radius", 6)
 
     mode = annot_style.get("mode", "callouts")
-    wrap_chars = int(annot_style.get("wrap_chars", 14))
+    wrap_chars = _style_int(annot_style, "wrap_chars", 14)
     color_map = annot_style.get("colors", _DEFAULT_ROLE_COLORS)
+    if not isinstance(color_map, dict):
+        color_map = _DEFAULT_ROLE_COLORS
 
-    label_font_size = int(cfg.render.label_font_size * dpr)
+    label_font_size = max(1, int(cfg.render.label_font_size * dpr))
     stroke_width = int(cfg.render.region_stroke_width * dpr)
     border_width = int(cfg.render.callout_border_width * dpr)
 
     callout_border_width_scaled = int(callout_border_width * dpr)
-    callout_font_size_scaled = int(callout_font_size * dpr)
+    callout_font_size_scaled = max(1, int(callout_font_size * dpr))
     callout_corner_radius_scaled = int(callout_corner_radius * dpr)
     callout_padding_scaled = [int(callout_padding[0] * dpr), int(callout_padding[1] * dpr)]
     callout_tail_size_scaled = int(callout_tail_size * dpr)
@@ -580,19 +687,9 @@ def render_annotations(
 
     regions: list[_Region] = []
     for r in regions_data:
-        bbox = r.get("bounding_box", {})
-        if not bbox or r.get("deleted"):
-            continue
-        regions.append(_Region(
-            x=int(bbox.get("x", 0) * dpr),
-            y=int(bbox.get("y", 0) * dpr),
-            w=int(bbox.get("width", 0) * dpr),
-            h=int(bbox.get("height", 0) * dpr),
-            label=r.get("label") or r.get("elements_contained", [""])[0] or "Region",
-            role=r.get("role", "filter_form"),
-            callout_x=r.get("callout_x"),
-            callout_y=r.get("callout_y"),
-        ))
+        region = _to_draw_region(r, dpr, screen_index)
+        if region is not None:
+            regions.append(region)
 
     img = Image.open(img_path).convert("RGBA")
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))

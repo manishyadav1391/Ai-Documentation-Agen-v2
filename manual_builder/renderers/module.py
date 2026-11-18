@@ -4,22 +4,26 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 from docx.shared import Inches, Pt, RGBColor
-from manual_builder.utils import add_styled_heading, add_body_paragraph, hex_to_rgb
-from manual_builder.renderers.screen import render_screen
+from manual_builder.utils import add_styled_heading, add_body_paragraph, hex_to_rgb, xml_safe
+from manual_builder.renderers.screen import render_screen, _clean_note
 from docbot.clients.profile import ClientProfile
 from docbot.processing.annotate import render_annotations
 from loguru import logger
 
 
-def render_module(doc, session_dir, style, numbering):
+def render_module(doc, session_dir, style, numbering, client_key=None):
     """
     Renders a complete recorded module from session data folder.
     Reads module_meta.json or screen meta to build module headings and summaries.
+
+    *client_key* is the client whose manual is being assembled (its voice
+    notes_block and annotation settings are used); defaults to the client
+    currently selected in the app.
     """
     module_meta_path = session_dir / "module_meta.json"
-    
+
     module_name = ""
-    module_num = 10  # Fallback module number
+    module_num = None  # assigned after the front matter if absent/colliding
     intro = ""
     features = []
     screen_order = []
@@ -28,8 +32,8 @@ def render_module(doc, session_dir, style, numbering):
     # 1. Load module metadata from session.json (v3 primary source of truth)
     session_json_path = session_dir / "session.json"
     if session_json_path.exists():
+        from docbot.models import SessionStore, SessionLoadError
         try:
-            from docbot.models import SessionStore
             session_model = SessionStore.load(session_dir)
             module_name = session_model.module_name or ""
             if session_model.module_number is not None:
@@ -38,6 +42,10 @@ def render_module(doc, session_dir, style, numbering):
             features = session_model.module_features or []
             if session_model.screens:
                 screen_order = [s.index for s in session_model.screens]
+        except SessionLoadError:
+            # Corrupt session.json: abort rather than silently assembling from
+            # stale legacy per-screen files.
+            raise
         except Exception as e:
             print(f"[Warning] Failed to read session.json: {e}")
 
@@ -67,6 +75,9 @@ def render_module(doc, session_dir, style, numbering):
         if not module_name:
             module_name = session_dir.name.replace("session_", "Session ").replace("_", " ").title()
 
+    # Session / LLM text enters the document here: strip XML-illegal characters
+    module_name, intro, features = xml_safe(module_name), xml_safe(intro), xml_safe(list(features))
+
     # Folder-derived names come in lower case ("workflow automation")
     if module_name and module_name == module_name.lower():
         module_name = module_name.title()
@@ -81,6 +92,15 @@ def render_module(doc, session_dir, style, numbering):
             module_num = 1
         numbering.set_current_module(module_num)
     else:
+        # Module chapters follow the numbered front matter (and each other):
+        # keep an explicit module_number only if it does not collide.
+        last = numbering.last_number(level=1)
+        try:
+            module_num = int(module_num) if module_num is not None else None
+        except (TypeError, ValueError):
+            module_num = None
+        if module_num is None or module_num <= last:
+            module_num = last + 1
         numbering.set_current_module(module_num)
         numbering.set_section_number(level=1, number=module_num)
 
@@ -104,7 +124,7 @@ def render_module(doc, session_dir, style, numbering):
         for s in session_model.screens:
             if s.state_of is not None:
                 continue
-            screens_to_render.append((s.index, screen_content_dict(s), screen_meta_dict(s)))
+            screens_to_render.append((s.index, xml_safe(screen_content_dict(s)), xml_safe(screen_meta_dict(s))))
     else:
         for screen_idx in screen_order:
             content_path = session_dir / f"screen_{screen_idx}_content.json"
@@ -116,7 +136,7 @@ def render_module(doc, session_dir, style, numbering):
                 if screen_meta.get("state_of") is not None:
                     continue
                 content_data = json.loads(content_path.read_text(encoding="utf-8"))
-                screens_to_render.append((screen_idx, content_data, screen_meta))
+                screens_to_render.append((screen_idx, xml_safe(content_data), xml_safe(screen_meta)))
             except Exception as e:
                 logger.warning(f"Failed to load data for Screen {screen_idx}: {e}")
 
@@ -126,11 +146,12 @@ def render_module(doc, session_dir, style, numbering):
     # Load client profile for voice rules / notes_block
     profile = None
     try:
-        from config import get_config
-        cfg = get_config()
-        profile = ClientProfile.load(cfg.current_client)
-    except Exception:
-        pass
+        if not client_key:
+            from config import get_config
+            client_key = get_config().current_client
+        profile = ClientProfile.load(client_key)
+    except Exception as e:
+        logger.warning(f"Could not load client profile '{client_key}': {e}")
 
     if not single_screen:
         # Add Module Heading (e.g., "10. Case Form")
@@ -141,8 +162,9 @@ def render_module(doc, session_dir, style, numbering):
         if intro:
             add_body_paragraph(doc, intro, font_name=style.body_font, size_pt=style.body_size, color_hex=style.get_color("body_text"))
 
-        # Render voice notes_block if any
-        if profile and profile.notes_block:
+        # Render voice notes_block if any (strip a leading "Note:" — the label is added below)
+        notes_block = _clean_note(xml_safe(profile.notes_block or "")) if profile else ""
+        if notes_block:
             p_note = doc.add_paragraph()
             p_note.paragraph_format.space_before = Pt(4)
             p_note.paragraph_format.space_after = Pt(8)
@@ -152,7 +174,7 @@ def render_module(doc, session_dir, style, numbering):
             r_note_lbl.font.size = Pt(style.body_size)
             r_note_lbl.font.color.rgb = hex_to_rgb(style.get_color("tertiary"))
             
-            r_note_val = p_note.add_run(profile.notes_block)
+            r_note_val = p_note.add_run(" ".join(notes_block.split()))
             r_note_val.font.name = style.body_font
             r_note_val.font.size = Pt(style.body_size)
             r_note_val.font.color.rgb = hex_to_rgb(style.get_color("body_text"))
@@ -180,24 +202,6 @@ def render_module(doc, session_dir, style, numbering):
     for screen_idx, content_data, screen_meta in screens_to_render:
         print(f"  Rendering screen: {content_data.get('screen_name', f'Screen {screen_idx}')}...")
 
-        if single_screen:
-            # Render at level 1 directly (Heading 1) instead of level 2 (Heading 2)
-            # Temporarily override enter_section level-2 behavior by making enter_section(2) call enter_section(1)
-            # Or we can pass a parameter to render_screen or adjust NumberingTracker section counters.
-            # In screen.py, it does: screen_number_str = numbering.enter_section(level=2)
-            # To render at level 1, we can adjust enter_section or set level=1.
-            # Wait, screen.py does screen_number_str = numbering.enter_section(level=2)
-            # If we detect single_screen, we can make numbering.enter_section(level=2) return the level 1 section number!
-            # Let's adjust enter_section in NumberingTracker or add a wrapper.
-            # Wrapper:
-            orig_enter_section = numbering.enter_section
-            def single_screen_enter(level):
-                if level == 2:
-                    # Return current level 1 section number
-                    return numbering.get_current_section_number()
-                return orig_enter_section(level)
-            numbering.enter_section = single_screen_enter
-
         # Re-render the annotated PNG so it honours the current box/callout settings
         try:
             render_annotations(session_dir, screen_idx,
@@ -212,9 +216,8 @@ def render_module(doc, session_dir, style, numbering):
             content_data=content_data,
             screen_meta=screen_meta,
             style=style,
-            numbering=numbering
+            numbering=numbering,
+            # Single-screen module (continuous mode): the screen itself is the
+            # module's Heading 1, numbered like a module heading.
+            heading_level=1 if single_screen else 2,
         )
-
-        if single_screen:
-            # Restore enter_section
-            numbering.enter_section = orig_enter_section

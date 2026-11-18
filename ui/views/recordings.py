@@ -11,7 +11,9 @@ class RecordingsView(ttk.Frame):
         super().__init__(parent)
         self.app = app
         self.session_mappings = []
+        self._session_clients = {}       # folder -> client_key ("" = unknown/legacy)
         self._selection_order = []       # Track click-order of tree item ids
+        self.show_all_var = tk.BooleanVar(value=False)
         
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
@@ -31,18 +33,20 @@ class RecordingsView(ttk.Frame):
     def _build_tree(self):
         # Treeview Scrollbar
         self.vbar = ttk.Scrollbar(self.tree_frame, orient="vertical")
-        self.tree = ttk.Treeview(self.tree_frame, columns=("num", "name", "date", "screens", "status"),
+        self.tree = ttk.Treeview(self.tree_frame, columns=("num", "name", "client", "date", "screens", "status"),
                                  show="headings", selectmode="extended", yscrollcommand=self.vbar.set)
         self.vbar.config(command=self.tree.yview)
         
         self.tree.heading("num", text="No.")
         self.tree.heading("name", text="Module Name")
+        self.tree.heading("client", text="Client")
         self.tree.heading("date", text="Captured Time")
         self.tree.heading("screens", text="Screens")
         self.tree.heading("status", text="Status")
         
         self.tree.column("num", width=60, minwidth=40, anchor="center")
         self.tree.column("name", width=250, minwidth=150, anchor="w")
+        self.tree.column("client", width=110, minwidth=70, anchor="center")
         self.tree.column("date", width=180, minwidth=120, anchor="center")
         self.tree.column("screens", width=80, minwidth=60, anchor="center")
         self.tree.column("status", width=100, minwidth=80, anchor="center")
@@ -68,6 +72,8 @@ class RecordingsView(ttk.Frame):
         ttk.Button(self.btn_frame, text="Refresh Sessions", command=self.refresh).pack(side=tk.LEFT, padx=4)
         ttk.Button(self.btn_frame, text="Open Review UI", command=self.open_review).pack(side=tk.LEFT, padx=4)
         ttk.Button(self.btn_frame, text="Delete Selected", style="Danger.TButton", command=self.delete_selected).pack(side=tk.LEFT, padx=4)
+        ttk.Checkbutton(self.btn_frame, text="Show all clients", variable=self.show_all_var,
+                        command=self.refresh).pack(side=tk.LEFT, padx=(12, 4))
         
         # Primary Action on Right
         self.assemble_btn = ttk.Button(self.btn_frame, text="Assemble Master Manual", style="Primary.TButton", command=self.assemble_selected)
@@ -78,7 +84,10 @@ class RecordingsView(ttk.Frame):
         for item in self.tree.get_children():
             self.tree.delete(item)
         self.session_mappings = []
+        self._session_clients = {}
         self._selection_order = []
+        current_client = self._current_client()
+        show_all = self.show_all_var.get()
         
         sessions_dir = paths.sessions_dir()
         if not sessions_dir.exists():
@@ -93,6 +102,9 @@ class RecordingsView(ttk.Frame):
                 try:
                     with session_file.open("r", encoding="utf-8") as f:
                         data = json.load(f)
+                    client = self._norm_client(data.get("client_key"))
+                    if not show_all and client and client != current_client:
+                        continue
                     mod_name = data.get("module_name", "") or d.name
                     mod_num = data.get("module_number", "")
                     
@@ -114,6 +126,7 @@ class RecordingsView(ttk.Frame):
                         "folder": d.name,
                         "num": str(mod_num) if mod_num is not None else "",
                         "name": mod_name,
+                        "client": client,
                         "date": display_time,
                         "screens": str(screens_cnt),
                         "status": status_text
@@ -124,6 +137,7 @@ class RecordingsView(ttk.Frame):
                         "folder": d.name,
                         "num": "",
                         "name": d.name,
+                        "client": "",
                         "date": "Unknown",
                         "screens": "0",
                         "status": "Corrupt"
@@ -136,11 +150,25 @@ class RecordingsView(ttk.Frame):
             item_id = self.tree.insert("", tk.END, values=(
                 info["num"],
                 info["name"],
+                info["client"] or "—",
                 info["date"],
                 info["screens"],
                 info["status"]
             ))
             self.session_mappings.append(info["folder"])
+            self._session_clients[info["folder"]] = info["client"]
+
+    @staticmethod
+    def _norm_client(value) -> str:
+        """Session client key; "" for legacy sessions recorded without one."""
+        v = str(value or "").strip()
+        return "" if v in ("", "default", "_default") else v
+
+    def _current_client(self) -> str:
+        try:
+            return str(self.app.config.current_client or "")
+        except Exception:
+            return ""
             
     def get_selected_folders(self):
         """Return selected folders in the user's click order."""
@@ -229,6 +257,17 @@ class RecordingsView(ttk.Frame):
             messagebox.showwarning("Warning", "Please select one or more modules (sessions) to assemble.")
             return
         
+        current = self._current_client()
+        foreign = sorted({self._session_clients.get(f, "") for f in folders} - {"", current})
+        if foreign:
+            if not messagebox.askyesno(
+                "Different Client",
+                f"Some selected sessions were recorded for another client ({', '.join(foreign)}).\n\n"
+                f"The manual will be assembled with the branding and front matter of the "
+                f"current client '{current}'. Continue anyway?",
+            ):
+                return
+
         # Get ordered entries (sorted by module_number)
         ordered_entries = self._get_ordered_session_paths(folders)
 

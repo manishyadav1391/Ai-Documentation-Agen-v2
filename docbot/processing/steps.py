@@ -52,6 +52,7 @@ def compile_steps(events: Sequence[Event]) -> list[Step]:
             while j < len(events) and events[j].kind in ("input", "change"):
                 group.append(events[j])
                 j += 1
+            group = _one_per_field(group)
 
             if len(group) == 1:
                 # Single field → simple step
@@ -85,12 +86,7 @@ def compile_steps(events: Sequence[Event]) -> list[Step]:
 
         # ── Change (select / checkbox / radio) ──────────────────────────
         if ev.kind == "change":
-            field_name = _field_display(ev)
-            value = ev.value_summary or ""
-            if value:
-                step_text = f"Select {value!r} from the {field_name} dropdown."
-            else:
-                step_text = f"Select the appropriate option in the {field_name} field."
+            step_text = _change_text(ev)
             steps.append(Step(n=n, text=step_text, kind="action", event_id=ev.id))
             n += 1
             i += 1
@@ -101,27 +97,29 @@ def compile_steps(events: Sequence[Event]) -> list[Step]:
             name = ev.target_name or "button"
             role = (ev.target_role or "").lower()
             if "button" in role or "link" in role:
-                step_text = f"Click on the {name} button."
+                if name.lower().endswith(" button") or name.lower() == "button":
+                    step_text = f"Click on the {name}."
+                else:
+                    step_text = f"Click on the {name} button."
             else:
                 step_text = f"Click on {name}."
             steps.append(Step(n=n, text=step_text, kind="action", event_id=ev.id))
             n += 1
 
+            # The form submit triggered by this click is the same user action
+            i = _skip_submits(events, i + 1)
+
             # Look-ahead: was the next event a navigation?
-            if i + 1 < len(events) and events[i + 1].kind == "navigate":
-                nav_ev = events[i + 1]
-                page_title = nav_ev.target_name or "the next page"
+            if i < len(events) and events[i].kind == "navigate":
+                nav_ev = events[i]
                 steps.append(Step(
                     n=n,
-                    text=f"The {page_title} page will be displayed.",
+                    text=_page_displayed(nav_ev),
                     kind="result",
                     event_id=nav_ev.id,
                 ))
                 n += 1
-                i += 2   # skip the navigate we already consumed
-                continue
-
-            i += 1
+                i += 1   # skip the navigate we already consumed
             continue
 
         # ── Enter key (implicit submit) ──────────────────────────────────
@@ -134,20 +132,19 @@ def compile_steps(events: Sequence[Event]) -> list[Step]:
                 event_id=ev.id,
             ))
             n += 1
+            # The form submit triggered by Enter is the same user action
+            i = _skip_submits(events, i + 1)
             # Look-ahead for navigation
-            if i + 1 < len(events) and events[i + 1].kind == "navigate":
-                nav_ev = events[i + 1]
-                page_title = nav_ev.target_name or "the next page"
+            if i < len(events) and events[i].kind == "navigate":
+                nav_ev = events[i]
                 steps.append(Step(
                     n=n,
-                    text=f"The {page_title} page will be displayed.",
+                    text=_page_displayed(nav_ev),
                     kind="result",
                     event_id=nav_ev.id,
                 ))
                 n += 1
-                i += 2
-                continue
-            i += 1
+                i += 1
             continue
 
         # ── Submit ───────────────────────────────────────────────────────
@@ -165,10 +162,9 @@ def compile_steps(events: Sequence[Event]) -> list[Step]:
         # ── Navigate (standalone, not after a click) ──────────────────────
         if ev.kind == "navigate":
             if ev.url_after and ev.url_before != ev.url_after:
-                page_title = ev.target_name or "the next page"
                 steps.append(Step(
                     n=n,
-                    text=f"The {page_title} page will be displayed.",
+                    text=_page_displayed(ev),
                     kind="result",
                     event_id=ev.id,
                 ))
@@ -185,3 +181,62 @@ def compile_steps(events: Sequence[Event]) -> list[Step]:
 def _field_display(ev: Event) -> str:
     """Best display name for the field referenced in an event."""
     return (ev.target_name or ev.target_selector or "field").strip()
+
+
+def _page_displayed(nav_ev: Event) -> str:
+    """Result sentence for a navigation ("The next page" when the title is unknown)."""
+    title = (nav_ev.target_name or "").strip()
+    if not title:
+        return "The next page will be displayed."
+    if title.lower().endswith(" page"):
+        return f"The {title} will be displayed."
+    return f"The {title} page will be displayed."
+
+
+def _skip_submits(events: Sequence[Event], i: int) -> int:
+    """Return the index of the first non-``submit`` event at or after *i*."""
+    while i < len(events) and events[i].kind == "submit":
+        i += 1
+    return i
+
+
+def _field_key(ev: Event) -> str:
+    return (ev.target_selector or ev.target_name or ev.id or "").strip()
+
+
+def _one_per_field(group: list[Event]) -> list[Event]:
+    """Collapse repeated input events on one field (one per keystroke) to the last one."""
+    last: dict[str, Event] = {}
+    for ev in group:
+        last[_field_key(ev)] = ev
+    seen: set[str] = set()
+    out: list[Event] = []
+    for ev in group:
+        key = _field_key(ev)
+        if key not in seen:
+            seen.add(key)
+            out.append(last[key])
+    return out
+
+
+_CHECKED_VALUES = {"on", "true", "checked", "yes", "1"}
+_UNCHECKED_VALUES = {"off", "false", "unchecked", "no", "0"}
+
+
+def _change_text(ev: Event) -> str:
+    """Step text for a ``change`` event on a select, checkbox, radio or other field."""
+    field_name = _field_display(ev)
+    value = (ev.value_summary or "").strip()
+    role = (ev.target_role or "").lower()
+    low = value.lower()
+    if role in ("checkbox", "switch") or (not role and (low in _CHECKED_VALUES or low in _UNCHECKED_VALUES)):
+        if low in _UNCHECKED_VALUES:
+            return f"Clear the {field_name} checkbox."
+        return f"Select the {field_name} checkbox."
+    if role == "radio":
+        if value and low not in _CHECKED_VALUES:
+            return f"Select the {value} option for {field_name}."
+        return f"Select the {field_name} option."
+    if value and not ev.redacted:
+        return f"Select {value!r} from the {field_name} dropdown."
+    return f"Select the appropriate option in the {field_name} field."

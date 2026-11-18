@@ -39,3 +39,8 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+# === Local secrets / runtime state ===
+secrets.yaml
+docbot.pid
+docbot.lock

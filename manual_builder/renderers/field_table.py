@@ -3,10 +3,13 @@
 from typing import Any, Dict, List
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from manual_builder.utils import set_cell_background, set_cell_margins, set_table_borders, hex_to_rgb
+from manual_builder.utils import (
+    set_cell_background, set_cell_margins, set_table_borders, hex_to_rgb, scaled_widths, set_table_width,
+)
 
 
-def render_field_table(doc, screen_index, field_details, style, table_number_str):
+def render_field_table(doc, screen_index, field_details, style, table_number_str,
+                       seq_value=None, reset=False):
     """
     Renders the 4-column field details table:
     Field Name | Utility | Information | Sample
@@ -25,14 +28,13 @@ def render_field_table(doc, screen_index, field_details, style, table_number_str
     set_table_borders(table, border_color)
 
     # Set column widths
-    table.columns[0].width = Inches(1.8)  # Field Name
-    table.columns[1].width = Inches(2.2)  # Utility
-    table.columns[2].width = Inches(1.5)  # Information
-    table.columns[3].width = Inches(1.0)  # Sample
+    # Field Name | Utility | Information | Sample, scaled to the usable width
+    set_table_width(table, scaled_widths(doc, [1.8, 2.2, 1.5, 1.0]))
 
     # Render Header
-    hdr_bg = style.tables.get("header_bg", style.table_header_bg)
-    hdr_fg = style.tables.get("header_fg", style.table_header_fg)
+    # Values may be colour aliases ("table_header_bg") — resolve before writing w:fill
+    hdr_bg = style.get_color(style.tables.get("header_bg") or style.table_header_bg)
+    hdr_fg = style.get_color(style.tables.get("header_fg") or style.table_header_fg)
     hdr_bold = style.tables.get("header_bold", True)
 
     hdr_cells = table.rows[0].cells
@@ -83,15 +85,16 @@ def render_field_table(doc, screen_index, field_details, style, table_number_str
         caption_text = f"{caption_text} Table"
 
     from docbot.export.word_fields import add_caption
-    module_num = int(table_number_str.split("-")[0]) if "-" in table_number_str else None
-    
+
     add_caption(
         doc,
         prefix=table_prefix,
         caption_text=caption_text,
         style_cfg=style,
         seq_name="Table",
-        module_num=module_num if style.numbering.get("table_format", "{module}-{tbl}").startswith("{module}") else None,
+        number=table_number_str,
+        seq_value=seq_value,
+        reset_to=1 if reset else None,
         font_size_pt=style.tables.get("caption_size_pt", 10),
     )
 

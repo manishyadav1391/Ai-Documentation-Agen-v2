@@ -7,12 +7,48 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import yaml
+from loguru import logger
+
+# Built-in colours for the standard aliases, used when a style.yaml has an
+# empty/partial ``colors:`` block or an invalid hex value.
+_DEFAULT_COLORS = {
+    "primary": "1B365D",
+    "secondary": "D97706",
+    "tertiary": "C00000",
+    "accent": "3B82F6",
+    "table_header_bg": "1B365D",
+    "table_header_fg": "FFFFFF",
+    "table_zebra": "F8FAFC",
+    "body_text": "333333",
+    "muted": "828282",
+}
+_HEX_CHARS = set("0123456789abcdefABCDEF")
+
+# Top-level style blocks that renderers treat as mappings.
+_DICT_SECTIONS = ("page", "fonts", "colors", "headings", "numbering", "figures", "tables",
+                  "bullets", "cover", "revision_history", "toc", "logo", "footer",
+                  "annotations", "fields", "layout", "header")
+
+
+def _is_hex(value: str) -> bool:
+    return len(value) == 6 and all(c in _HEX_CHARS for c in value)
 
 
 @dataclass
 class StyleConfig:
     """Parsed and validated style configuration."""
     raw: Dict[str, Any]
+
+    def __post_init__(self):
+        # ``colors:`` with nothing under it parses as None; renderers call
+        # ``.get`` on these blocks directly, so normalise to empty mappings.
+        if not isinstance(self.raw, dict):
+            self.raw = {}
+        for key in _DICT_SECTIONS:
+            if key in self.raw and not isinstance(self.raw[key], dict):
+                if self.raw[key] is not None:
+                    logger.warning(f"[Style] '{key}' should be a mapping; ignoring {self.raw[key]!r}.")
+                self.raw[key] = {}
 
     # Convenience accessors with defaults
     @property
@@ -96,10 +132,17 @@ class StyleConfig:
         """
         if not name_or_hex:
             return "000000"
+        name = str(name_or_hex)
         colors = self.colors
-        if name_or_hex in colors:
-            return str(colors[name_or_hex]).lstrip("#")
-        return str(name_or_hex).lstrip("#")
+        value = str(colors[name]).lstrip("#") if name in colors else name.lstrip("#")
+        if _is_hex(value):
+            return value
+        # Unknown alias or invalid hex (e.g. "ZZZZZZ"): fall back rather than
+        # write an invalid w:fill / w:color that Word refuses to open.
+        fallback = _DEFAULT_COLORS.get(name, "000000")
+        if name in colors or name not in _DEFAULT_COLORS:
+            logger.warning(f"[Style] Invalid colour '{value}' for '{name}'; using {fallback}.")
+        return fallback
 
     @property
     def primary_color(self) -> str:

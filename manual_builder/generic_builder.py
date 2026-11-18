@@ -2,6 +2,7 @@
 Generic manifest-driven document builder implementation.
 """
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from docx import Document
@@ -9,6 +10,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from loguru import logger
 
 from manual_builder.manifest_loader import ManifestConfig, SectionEntry
 from manual_builder.style_loader import StyleConfig
@@ -49,6 +51,9 @@ class GenericBuilder:
         self.manifest = manifest
         self.style = style
         self.numbering = numbering_tracker
+        # TOF/TOT blocks are rendered where the manifest puts them (before the
+        # modules), but whether any captions exist is only known at the end.
+        self._caption_lists: list[tuple[str, list]] = []
         self._setup_styles()
 
     def _setup_styles(self):
@@ -151,33 +156,59 @@ class GenericBuilder:
             computed_heading = f"{section_number} {section.heading}"
 
         if stype == "cover":
+            body_len = len(self.doc.element.body)
             render_cover(self.doc, section, self.manifest, self.style)
+            if len(self.doc.element.body) > body_len:
+                # A cover was emitted: suppress header/footer on page 1 only.
+                self.doc.sections[0].different_first_page_header_footer = True
         elif stype == "revision_history":
             render_revision_history(self.doc, section, self.manifest, self.style)
         elif stype == "table_of_contents":
             render_toc(self.doc, section, self.manifest, self.style)
-        elif stype == "table_of_tables":
-            # D4: skip if no tables were captioned
-            if self.numbering.table_count > 0:
-                render_table_of_tables(self.doc, section, self.manifest, self.style)
-        elif stype == "table_of_figures":
-            # D4: skip if no figures were captioned
-            if self.numbering.figure_count > 0:
-                render_table_of_figures(self.doc, section, self.manifest, self.style)
+        elif stype in ("table_of_tables", "table_of_figures"):
+            # D4: dropped in save() if no tables/figures end up captioned
+            renderer = render_table_of_tables if stype == "table_of_tables" else render_table_of_figures
+            self._caption_lists.append((stype, self._capture(renderer, section)))
         elif stype == "prose":
-            render_prose(self.doc, section, self.manifest, self.style, heading_text=computed_heading)
+            render_prose(self.doc, section, self.manifest, self.style, heading_text=computed_heading,
+                         heading_level=level)
         elif stype == "bullet_list":
-            render_bullet_list(self.doc, section, self.manifest, self.style, heading_text=computed_heading)
+            render_bullet_list(self.doc, section, self.manifest, self.style, heading_text=computed_heading,
+                               heading_level=level)
         elif stype == "icon_table":
-            render_icon_table(self.doc, section, self.manifest, self.style, heading_text=computed_heading)
+            render_icon_table(self.doc, section, self.manifest, self.style, heading_text=computed_heading,
+                              heading_level=level)
         elif stype == "group":
             def nested_dispatch(sub_section):
                 self.dispatch_section(sub_section, level=level + 1)
-            render_group(self.doc, section, self.manifest, self.style, nested_dispatch, heading_text=computed_heading)
+            render_group(self.doc, section, self.manifest, self.style, nested_dispatch, heading_text=computed_heading,
+                         heading_level=level)
         elif stype == "modules":
             pass
         else:
             print(f"[Warning] Unknown section type: {stype}")
+
+    def _capture(self, renderer, section) -> list:
+        """Run *renderer* and return the body elements it appended."""
+        body = self.doc.element.body
+        existing = list(body)  # strong refs keep lxml proxies (and their ids) stable
+        before = set(id(el) for el in existing)
+        renderer(self.doc, section, self.manifest, self.style)
+        added = [el for el in body if id(el) not in before and el.tag != qn("w:sectPr")]
+        del existing
+        return added
+
+    def _drop_empty_caption_lists(self):
+        """D4: remove Table of Tables / Figures when nothing was captioned."""
+        counts = {"table_of_tables": self.numbering.table_count,
+                  "table_of_figures": self.numbering.figure_count}
+        for stype, elements in self._caption_lists:
+            if counts[stype] == 0:
+                for el in elements:
+                    parent = el.getparent()
+                    if parent is not None:
+                        parent.remove(el)
+        self._caption_lists = []
 
     def build_front_matter(self):
         """Assembles front matter from manifest."""
@@ -187,7 +218,8 @@ class GenericBuilder:
 
     def build_module(self, session_dir: Path):
         """Render a single module from session data."""
-        render_module(self.doc, session_dir, self.style, self.numbering)
+        render_module(self.doc, session_dir, self.style, self.numbering,
+                      client_key=self.manifest.client_key)
 
     def build_full_manual(self, ordered_session_dirs: list[Path]):
         """Builds cover, revision history, TOC, and all session modules together."""
@@ -198,10 +230,26 @@ class GenericBuilder:
             else:
                 self.dispatch_section(section)
 
-    def save(self, output_path: Path):
-        """Save the document to disk."""
+    def save(self, output_path: Path) -> Path:
+        """
+        Save the document to disk and return the path actually written.
+
+        If the target is locked (typically open in Word), the manual is saved
+        next to it under a timestamped name instead of failing the build.
+        """
+        self._drop_empty_caption_lists()
+        output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        self.doc.save(output_path)
+        try:
+            self.doc.save(output_path)
+            return output_path
+        except PermissionError as e:
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            alt = output_path.with_name(f"{output_path.stem}_{stamp}{output_path.suffix}")
+            logger.warning(f"Cannot write {output_path} ({e}); it may be open in Word. "
+                           f"Saving to {alt} instead.")
+            self.doc.save(alt)
+            return alt
 
 
 # ---------------------------------------------------------------------------

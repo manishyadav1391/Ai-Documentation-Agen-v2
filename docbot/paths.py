@@ -43,6 +43,26 @@ def logs_dir()      -> Path: return data_dir() / "logs"
 def prompts_dir()   -> Path: return bundle_dir() / "prompts"      # read-only
 def provider_prompts_dir() -> Path: return bundle_dir() / "providers" / "prompts"
 
+def _seed_config(src: Path, dst: Path) -> None:
+    """Copy the bundled config.yaml for a fresh install.
+
+    The bundled file is the developer's working config, so per-machine state
+    (first_run_done, saved window geometry) is reset; otherwise a new install
+    would never show the Welcome Wizard.
+    """
+    try:
+        import yaml
+        data = yaml.safe_load(src.read_text(encoding="utf-8")) or {}
+        if not isinstance(data, dict):
+            raise ValueError("bundled config.yaml is not a mapping")
+        data["first_run_done"] = False
+        for k in ("window_geometry", "review_geometry"):
+            data.pop(k, None)
+        dst.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    except Exception:
+        shutil.copy2(src, dst)
+
+
 def ensure_first_run() -> None:
     """On first launch of the frozen app, seed the data dir from bundled defaults."""
     seeds = [
@@ -66,6 +86,9 @@ def ensure_first_run() -> None:
                             shutil.copy2(item, item_dst)
             else:
                 if not dst.exists():
-                    shutil.copy2(src, dst)
+                    if src_name == "config.yaml":
+                        _seed_config(src, dst)
+                    else:
+                        shutil.copy2(src, dst)
     for d in (sessions_dir(), outputs_dir(), logs_dir()):
         d.mkdir(parents=True, exist_ok=True)

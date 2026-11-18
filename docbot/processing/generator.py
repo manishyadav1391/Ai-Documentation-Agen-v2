@@ -20,11 +20,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
 
 from providers.base import Provider, load_prompt, GenerationError
 
@@ -36,12 +37,37 @@ if TYPE_CHECKING:
 # Response schema (pydantic v2) — matches the v3 prompt OUTPUT FORMAT
 # ---------------------------------------------------------------------------
 
-class _RegionLabel(BaseModel):
+class _Lenient(BaseModel):
+    """Base for LLM reply models: a ``null`` value means "use the default"."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_nulls(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            return {k: v for k, v in data.items() if v is not None}
+        return data
+
+
+def _str_list(value: Any) -> Any:
+    """Accept a bare string or a list with nulls for a ``list[str]`` field."""
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, list):
+        return [str(v) for v in value if v is not None]
+    return value
+
+
+class _RegionLabel(_Lenient):
     id: str
-    label: str
+    label: str = ""
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _id_to_str(cls, v: Any) -> Any:
+        return str(v) if isinstance(v, (int, float)) else v
 
 
-class _FieldDetail(BaseModel):
+class _FieldDetail(_Lenient):
     id: str
     field_name: str = ""
     utility: str = ""
@@ -49,26 +75,44 @@ class _FieldDetail(BaseModel):
     sample: str = ""
 
 
-class _Step(BaseModel):
-    n: int
-    text: str
-    kind: str = "action"
+class _Step(_Lenient):
+    n: int = 0
+    text: str = ""
+    kind: Literal["action", "result"] = "action"
     event_id: str | None = None
 
+    @field_validator("n", mode="before")
+    @classmethod
+    def _parse_n(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            m = re.match(r"\s*(\d+)", v)
+            return int(m.group(1)) if m else 0
+        return v
 
-class _DocItem(BaseModel):
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _norm_kind(cls, v: Any) -> str:
+        """Anything other than a result (note, info, '', 'Action') is an action."""
+        return "result" if str(v).strip().lower() == "result" else "action"
+
+
+class _DocItem(_Lenient):
     name: str = ""
     description: str = ""
     control_type: str = ""
 
 
-class _DocSection(BaseModel):
+class _DocSection(_Lenient):
     title: str = ""
     lead_in: str = ""
     items: list[_DocItem] = []
 
 
-class ScreenDocResponse(BaseModel):
+# A usable screen reply must have a non-empty value for at least one of these
+_SCREEN_CONTENT_KEYS = ("screen_name", "intro", "sections", "purpose", "navigation_sentence", "steps")
+
+
+class ScreenDocResponse(_Lenient):
     """Parsed LLM response for a single screen."""
     screen_name: str = ""
     screen_type: str = "other"
@@ -83,11 +127,32 @@ class ScreenDocResponse(BaseModel):
     table_columns_doc: list[str] = []
     buttons_doc: list[str] = []
 
+    @field_validator("notes", "table_columns_doc", "buttons_doc", mode="before")
+    @classmethod
+    def _lists(cls, v: Any) -> Any:
+        return _str_list(v)
 
-class ModuleIntroResponse(BaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def _require_content(cls, data: Any) -> Any:
+        """Reject ``{}`` or a reply with none of the expected keys (it would wipe the screen)."""
+        if isinstance(data, dict) and not any(data.get(k) for k in _SCREEN_CONTENT_KEYS):
+            raise ValueError(
+                "Reply contains none of the required keys with content: "
+                + ", ".join(_SCREEN_CONTENT_KEYS)
+            )
+        return data
+
+
+class ModuleIntroResponse(_Lenient):
     """Parsed LLM response for the module intro."""
     intro: str = ""
     features: list[str] = []
+
+    @field_validator("features", mode="before")
+    @classmethod
+    def _lists(cls, v: Any) -> Any:
+        return _str_list(v)
 
 
 # ---------------------------------------------------------------------------
@@ -245,8 +310,7 @@ class Generator:
                 prompt=prompt,
                 schema=ScreenDocResponse,
                 images=images or None,
-                max_tokens=8000,
-                temperature=0.1,
+                temperature=0.1,  # max_tokens: the provider's configured value
             )
         except GenerationError as e:
             logger.error(f"[Generator] Screen {screen.index}: generation failed: {e}")
@@ -307,18 +371,23 @@ class Generator:
             result = self.provider.chat_json(
                 prompt=prompt,
                 schema=ModuleIntroResponse,
-                max_tokens=2000,
-                temperature=0.15,
+                temperature=0.15,  # max_tokens: the provider's configured value
             )
         except GenerationError as e:
             logger.warning(f"[Generator] Module intro generation failed: {e}. Using fallback.")
-            return ModuleIntroResponse(
+            fallback = ModuleIntroResponse(
                 intro=(
-                    f"The {session.module_name} module enables users to manage related "
-                    f"processes within {app_name}."
+                    f"The {_display_module_name(session.module_name)} module enables users "
+                    f"to manage related processes within {app_name}."
                 ),
-                features=[s.get("name", "") for s in screens_info],
+                features=[s.get("name", "") for s in screens_info if s.get("name")],
             )
+            # Write into the session, but keep an existing (e.g. user-edited) intro
+            if not session.module_intro:
+                session.module_intro = fallback.intro
+            if not session.module_features:
+                session.module_features = fallback.features
+            return fallback
 
         # Write into session model
         session.module_intro = result.intro
@@ -461,45 +530,56 @@ def _merge_result_into_screen(
     result: ScreenDocResponse,
     content_hash: str,
 ) -> None:
-    """Merge LLM result by id into the screen model."""
+    """
+    Merge LLM result by id into the screen model.
+
+    Only keys present in the reply are applied (a missing / null key keeps
+    the existing value).  All values are converted before anything is
+    assigned, so a bad value cannot leave the screen half-written, and
+    ``content_hash`` is set last.
+    """
     from docbot.models import DocItem, DocSection, Step
 
+    present = result.model_fields_set
+    content = screen.content
 
-    # Update content fields
-    screen.content.screen_name = result.screen_name or screen.content.screen_name
-    screen.content.intro = result.intro
-    screen.content.sections = [
-        DocSection(
-            title=sec.title,
-            lead_in=sec.lead_in,
-            items=[DocItem(**it.model_dump()) for it in sec.items if it.name.strip()],
-        )
-        for sec in result.sections
-        if sec.items
-    ]
-    screen.content.purpose = result.purpose
-    screen.content.navigation_sentence = result.navigation_sentence
-    screen.content.notes = result.notes
-    screen.content.buttons_doc = result.buttons_doc
-    screen.content.table_columns_doc = result.table_columns_doc
-    screen.content.content_hash = content_hash
+    # Build every new value before touching the screen
+    updates: dict = {}
+    if "screen_name" in present and result.screen_name.strip():
+        updates["screen_name"] = result.screen_name
+    for key in ("intro", "purpose", "navigation_sentence"):
+        if key in present:
+            updates[key] = getattr(result, key)
+    if "sections" in present:
+        updates["sections"] = [
+            DocSection(
+                title=sec.title,
+                lead_in=sec.lead_in,
+                items=[DocItem(**it.model_dump()) for it in sec.items if it.name.strip()],
+            )
+            for sec in result.sections
+            if any(it.name.strip() for it in sec.items)
+        ]
+    for key in ("notes", "buttons_doc", "table_columns_doc"):
+        if key in present:
+            updates[key] = list(getattr(result, key))
+    if "steps" in present:
+        llm_steps = [st for st in result.steps if st.text.strip()]
+        # Replace the skeleton with the LLM-polished version
+        updates["steps"] = [
+            Step(n=st.n if st.n > 0 else pos, text=st.text, kind=st.kind, event_id=st.event_id)
+            for pos, st in enumerate(llm_steps, start=1)
+        ]
+    region_labels = {r.id: r.label for r in result.regions if r.label.strip()}
 
-    # Merge steps (replace skeleton with LLM-polished version)
-    screen.content.steps = [
-        Step(
-            n=s.n,
-            text=s.text,
-            kind=s.kind,  # type: ignore[arg-type]
-            event_id=s.event_id,
-        )
-        for s in result.steps
-    ]
+    # Apply
+    for key, value in updates.items():
+        setattr(content, key, value)
 
-    # Merge region labels by id
-    region_map = {r.id: r for r in screen.regions}
-    for r_label in result.regions:
-        if r_label.id in region_map:
-            region_map[r_label.id].label = r_label.label
+    # Merge region labels by id (an empty label never wipes an existing one)
+    for region in screen.regions:
+        if region.id in region_labels:
+            region.label = region_labels[region.id]
 
     # Merge field details by id
     field_map = {f.id: f for f in screen.fields}
@@ -511,10 +591,13 @@ def _merge_result_into_screen(
             field.information = f_detail.information
             field.sample = f_detail.sample  # empty string → skip in export
 
+    content.content_hash = content_hash
+
 
 def _content_to_response(content: "ScreenContent") -> ScreenDocResponse:
     """Re-wrap cached ScreenContent as a ScreenDocResponse for uniform return type."""
-    return ScreenDocResponse(
+    # model_construct: cached content is trusted and may legitimately be empty
+    return ScreenDocResponse.model_construct(
         screen_name=content.screen_name,
         intro=content.intro,
         sections=[_DocSection(**sec.model_dump()) for sec in content.sections],

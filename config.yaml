@@ -1,6 +1,6 @@
 provider: openrouter
 default_template: corporate
-current_client: demoshop
+current_client: batchsmart
 content_dir: content
 clients_dir: clients
 styles_dir: styles

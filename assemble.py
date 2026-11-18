@@ -12,6 +12,7 @@ from datetime import datetime
 from loguru import logger
 from config import get_config
 from manual_builder import load_manifest, load_style, NumberingTracker, GenericBuilder
+from manual_builder.build_error import BuildError
 from docbot.export.qa import run_qa_check, validate_ooxml_structure
 
 
@@ -20,10 +21,10 @@ def _make_output_filename(manifest, timestamp: str) -> str:
     Spec G: <ClientKey>_<SystemName>_User_Manual_v<version>.docx
     Spaces replaced with underscores.
     """
-    client = re.sub(r"[^A-Za-z0-9_]", "_", manifest.client_key.upper())
-    system = re.sub(r"\s+", "_", manifest.system_name or manifest.manual_title or "System")
+    client = re.sub(r"[^A-Za-z0-9_]", "_", str(manifest.client_key).upper())
+    system = re.sub(r"\s+", "_", str(manifest.system_name or manifest.manual_title or "System"))
     system = re.sub(r"[^A-Za-z0-9_]", "", system)
-    version = re.sub(r"[^A-Za-z0-9._]", "", manifest.document_version or manifest.version or "1.0")
+    version = re.sub(r"[^A-Za-z0-9._]", "", str(manifest.document_version or manifest.version or "1.0"))
     return f"{client}_{system}_User_Manual_v{version}_{timestamp}.docx"
 
 
@@ -39,13 +40,15 @@ def assemble_module(session_dir: Path):
 
     from docbot import paths
     # Load client metadata and styling
+    # Missing files already fall back to _default inside the loaders; anything
+    # raised here is a real configuration error (bad YAML etc.) — surface it
+    # instead of building a _default manual that fails later for another reason.
     try:
         manifest = load_manifest(client_key)
         style = load_style(client_key)
     except Exception as e:
-        logger.warning(f"Failed to load config for '{client_key}': {e}. Using defaults.")
-        manifest = load_manifest("_default")
-        style = load_style("_default")
+        logger.error(f"Failed to load manifest/style for client '{client_key}': {e}")
+        raise BuildError(f"Could not load configuration for client '{client_key}': {e}") from e
 
     numbering_mode = getattr(manifest, "numbering_mode", "module_prefixed")
     numbering = NumberingTracker(style, mode=numbering_mode)
@@ -65,7 +68,7 @@ def assemble_module(session_dir: Path):
     final_dir.mkdir(parents=True, exist_ok=True)
     output_docx = final_dir / output_filename
 
-    builder.save(output_docx)
+    output_docx = builder.save(output_docx)  # may differ if the file was locked
     logger.info(f"Module assembly complete! Saved to: {output_docx}")
 
     # Also copy to session dir for backwards compatibility

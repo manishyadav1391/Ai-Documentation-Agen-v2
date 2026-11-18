@@ -10,6 +10,7 @@ Phase 7 removes the old review_ui dependency chain.
 """
 
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +42,19 @@ class BrowserProvider(Provider):
         prompt_path = self.work_dir / "llm_prompt.txt"
         response_path = self.work_dir / "llm_response.txt"
 
+        # This mode waits for console input; a windowed build has no console.
+        if not _has_console():
+            raise RuntimeError(
+                "The 'browser' (copy-paste) provider needs a console window and cannot "
+                "run from the DocBot app. Choose an API provider in Settings."
+            )
+
         prompt_path.write_text(prompt, encoding="utf-8")
+        # Never reuse the previous screen's response
+        try:
+            response_path.unlink()
+        except FileNotFoundError:
+            pass
 
         try:
             subprocess.Popen([self.editor, str(prompt_path)])
@@ -65,3 +78,12 @@ class BrowserProvider(Provider):
                 raise KeyboardInterrupt("User aborted waiting for response file.")
 
         return response_path.read_text(encoding="utf-8").strip()
+
+
+def _has_console() -> bool:
+    """True when stdin is an interactive terminal (False for windowed / piped runs)."""
+    stdin = sys.stdin
+    try:
+        return stdin is not None and stdin.isatty()
+    except (AttributeError, ValueError, OSError):
+        return False

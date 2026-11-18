@@ -32,6 +32,8 @@ only when the previous module's figure count must restart).
 
 from __future__ import annotations
 
+import re
+
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
@@ -52,6 +54,8 @@ def add_caption(
     module_num: int | None = None,
     reset_to: int | None = None,
     font_size_pt: float = 10.0,
+    number: str | None = None,
+    seq_value: int | None = None,
 ) -> None:
     """
     Add a Word-compatible captioned paragraph with a SEQ field.
@@ -67,6 +71,14 @@ def add_caption(
         reset_to:      If provided, resets the counter to this value via
                        the ``\\r`` switch (used at module boundaries).
         font_size_pt:  Caption font size.
+        number:        The full number string issued by the NumberingTracker
+                       (e.g. "10-3" or "7"). When given, everything before the
+                       trailing counter is written as literal text and the
+                       counter becomes the SEQ field's cached result, so the
+                       saved file shows the same number Word recomputes.
+                       ``module_num`` is ignored in that case.
+        seq_value:     The counter behind *number* (defaults to its trailing
+                       digits).
     """
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     p = doc.add_paragraph()
@@ -84,14 +96,32 @@ def add_caption(
     _add_run(p, f"{prefix} ", bold=True, size_pt=font_size_pt,
              color_hex=style_cfg.get_color("secondary"))
 
-    # Module prefix: "10-" (bold)
-    if module_num is not None:
-        _add_run(p, f"{module_num}-", bold=True, size_pt=font_size_pt,
-                 color_hex=style_cfg.get_color("secondary"))
+    literal = f"{module_num}-" if module_num is not None else ""
+    cached = 1
+    if number is not None:
+        number = str(number)
+        if seq_value is None:
+            m = re.search(r"(\d+)$", number)
+            seq_value = int(m.group(1)) if m else None
+        if seq_value is not None and number.endswith(str(seq_value)):
+            literal = number[: len(number) - len(str(seq_value))]
+            cached = seq_value
+        else:
+            # Custom format that does not end in the counter: plain text only.
+            _add_run(p, number, bold=True, size_pt=font_size_pt,
+                     color_hex=style_cfg.get_color("secondary"))
+            literal = None
 
-    # SEQ field run
-    _insert_seq_field(p, seq_name=seq_name, reset_to=reset_to,
-                      size_pt=font_size_pt, color_hex=style_cfg.get_color("secondary"))
+    if literal is not None:
+        # Module prefix: "10-" (bold)
+        if literal:
+            _add_run(p, literal, bold=True, size_pt=font_size_pt,
+                     color_hex=style_cfg.get_color("secondary"))
+
+        # SEQ field run
+        _insert_seq_field(p, seq_name=seq_name, reset_to=reset_to,
+                          size_pt=font_size_pt, color_hex=style_cfg.get_color("secondary"),
+                          cached_value=cached)
 
     # Caption text run: " Login Screen"
     _add_run(p, f" {caption_text}", bold=False, size_pt=font_size_pt,
@@ -127,6 +157,7 @@ def _insert_seq_field(
     reset_to: int | None = None,
     size_pt: float = 10.0,
     color_hex: str = "828282",
+    cached_value: int = 1,
 ) -> None:
     """
     Insert a SEQ field into *para* using raw OOXML.
@@ -181,11 +212,12 @@ def _insert_seq_field(
     r_sep.append(fc_sep)
     p_el.append(r_sep)
 
-    # cached value "1" (Word will update on Ctrl+A, F9)
+    # cached value: the number the builder computed (Word recomputes on F9;
+    # the \r reset at module starts makes both agree)
     r_val = OxmlElement("w:r")
     r_val.append(_make_rpr(para))
     wt = OxmlElement("w:t")
-    wt.text = "1"
+    wt.text = str(cached_value)
     r_val.append(wt)
     p_el.append(r_val)
 

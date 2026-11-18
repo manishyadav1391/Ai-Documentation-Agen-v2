@@ -200,11 +200,11 @@ class Provider(ABC):
                     f"[{self.name}] chat call failed on attempt {attempt + 1}: {exc}"
                 ) from exc
 
-            # Strip fences
-            text = _strip_fences(raw)
+            # Strip fences (a provider may return content: null)
+            text = _strip_fences(raw if isinstance(raw, str) else "")
 
             try:
-                data = json.loads(text)
+                data = _loads_lenient(text)
                 return schema.model_validate(data)
             except json.JSONDecodeError as e:
                 self._last_validation_error = f"JSON parse error: {e} — raw snippet: {text[:300]}"
@@ -234,6 +234,23 @@ class Provider(ABC):
         return json.dumps(data, indent=2, ensure_ascii=False)
 
 
+def is_local_endpoint(url: str) -> bool:
+    """True for localhost / loopback / private-LAN URLs (keyless servers like Ollama, LM Studio)."""
+    from urllib.parse import urlparse
+    import ipaddress
+    try:
+        host = (urlparse(url if "://" in (url or "") else f"http://{url}").hostname or "").lower()
+    except ValueError:
+        return False
+    if host in ("localhost", "host.docker.internal") or host.endswith(".local"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private or ip.is_link_local
+
+
 # Alias for backward compatibility with any remaining legacy imports
 LLMProvider = Provider
 
@@ -243,16 +260,39 @@ def _strip_fences(text: str) -> str:
     Remove markdown code fences from LLM output.
 
     Handles:
-    - ```json\\n…\\n```
+    - ```json\\n…\\n``` (any language tag, any case)
     - ```\\n…\\n```
-    - Inline leading/trailing whitespace
+    - A UTF-8 BOM, a leading ``<think>…</think>`` block, and leading /
+      trailing whitespace
     """
-    text = text.strip()
+    text = (text or "").lstrip("\ufeff").strip()
+    # Reasoning models may prefix their answer with a <think> block
+    text = re.sub(r"^<think>.*?</think>\s*", "", text, flags=re.DOTALL | re.IGNORECASE)
     # Match ```<optional lang>\\n...\\n```
-    match = re.match(r"^```(?:json)?\s*\n?(.*?)\n?```\s*$", text, re.DOTALL)
+    match = re.match(r"^```[A-Za-z]*\s*\n?(.*?)\n?```\s*$", text, re.DOTALL)
     if match:
         return match.group(1).strip()
     # Also strip single-backtick wraps
     if text.startswith("`") and text.endswith("`"):
         return text[1:-1].strip()
     return text
+
+
+def _loads_lenient(text: str) -> Any:
+    """
+    ``json.loads`` with a fallback for chatty replies.
+
+    If the text is not valid JSON as a whole (preamble before the fence,
+    "Hope this helps!" after it, …) the outermost ``{...}`` span is parsed
+    instead.  The original decode error is raised if that fails too.
+    """
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as first_err:
+        start, end = text.find("{"), text.rfind("}")
+        if start == -1 or end <= start:
+            raise
+        try:
+            return json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            raise first_err

@@ -1,0 +1,25 @@
+app_name: Enterprise Application
+audience: users
+tone_rules:
+- Use formal, professional language in the present tense and active voice.
+- Avoid contractions ("do not", not "don't").
+- Use the on-screen labels exactly as displayed.
+- Use "→" for menu paths, e.g. "Click Masters → Users from the left navigation panel."
+- Describe each control as "Name – Description. (Control type)".
+- Do not write click-by-click logs; describe what each element does.
+examples:
+  purpose:
+  - The User List page displays all user accounts available in the system. Users can
+    search for existing users, create new users, and edit or deactivate user accounts.
+  - The Add User page allows the user to create a new user account by entering the
+    user details and assigning a role.
+  step:
+  - Enter the registered email address in the Email field.
+  - Click Login. The Dashboard page will be displayed.
+  field:
+  - Email – Enter the registered email address of the user. (Text)
+  - Status – Displays the current status of the user account, such as Active or Inactive.
+    (Display)
+  - Save – Click to save the entered details and create the record. (Button)
+navigation_template: ''
+notes_block: ''

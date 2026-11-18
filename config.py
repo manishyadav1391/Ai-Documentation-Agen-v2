@@ -223,13 +223,68 @@ def load_config(config_path: Any = None) -> Config:
     config_path = Path(config_path)
     raw: Dict[str, Any] = {}
     if config_path.exists():
-        with config_path.open("r", encoding="utf-8") as f:
-            raw = yaml.safe_load(f) or {}
+        try:
+            with config_path.open("r", encoding="utf-8") as f:
+                raw = yaml.safe_load(f) or {}
+        except (yaml.YAMLError, OSError, UnicodeDecodeError) as e:
+            logger.warning(f"Could not read {config_path} ({e}); using all defaults.")
+            _backup_invalid(config_path)
+            raw = {}
+        if not isinstance(raw, dict):
+            logger.warning(f"{config_path} does not contain a settings mapping; using all defaults.")
+            _backup_invalid(config_path)
+            raw = {}
         # Drop legacy theme block — it is now per-client in clients/<key>/style.yaml
         raw.pop("theme", None)
+        _normalise_provider(raw)
     else:
         logger.warning(f"Config file not found at {config_path}; using all defaults.")
-    return Config(**raw)
+    return _build_config(raw)
+
+
+def _backup_invalid(config_path: Path) -> None:
+    """Keep a copy of an unreadable config.yaml before a later save overwrites it."""
+    try:
+        import shutil
+        shutil.copy2(config_path, config_path.with_name(config_path.name + ".invalid"))
+    except OSError:
+        pass
+
+
+_PROVIDER_ALIASES = {"openai": "openai_compat", "groq": "openai_compat", "claude": "anthropic"}
+
+
+def _normalise_provider(raw: Dict[str, Any]) -> None:
+    """Map hand-edited provider names (``openai``, ``Browser``) to valid ones."""
+    if "provider" not in raw:
+        return
+    valid = Config.model_fields["provider"].annotation.__args__
+    name = str(raw["provider"] or "").strip().lower()
+    name = _PROVIDER_ALIASES.get(name, name)
+    if name not in valid:
+        logger.warning(f"Unknown provider {raw['provider']!r} in config.yaml; using 'browser'.")
+        name = "browser"
+    raw["provider"] = name
+
+
+def _build_config(raw: Dict[str, Any]) -> Config:
+    """Validate *raw*; drop invalid top-level keys (with a warning) instead of crashing."""
+    try:
+        return Config(**raw)
+    except Exception as e:
+        bad = set()
+        for err in getattr(e, "errors", lambda: [])():
+            if err.get("loc"):
+                bad.add(err["loc"][0])
+        if not bad:
+            logger.warning(f"Invalid config.yaml ({e}); using all defaults.")
+            return Config()
+        logger.warning(f"Invalid config.yaml values for {sorted(map(str, bad))}; using defaults for those. ({e})")
+        try:
+            return Config(**{k: v for k, v in raw.items() if k not in bad})
+        except Exception as e2:
+            logger.warning(f"Invalid config.yaml ({e2}); using all defaults.")
+            return Config()
 
 
 def get_config(config_path: Any = None) -> Config:

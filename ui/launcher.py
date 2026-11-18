@@ -92,12 +92,55 @@ def check_single_instance() -> bool:
         pass
     return True
 
+def _expected_chromium_dirname():
+    """Folder name (e.g. 'chromium-1208') the installed Playwright expects, or None."""
+    try:
+        import json
+        import playwright
+        meta = Path(playwright.__file__).parent / "driver" / "package" / "browsers.json"
+        for b in json.loads(meta.read_text(encoding="utf-8")).get("browsers", []):
+            if b.get("name") == "chromium":
+                return f"chromium-{b['revision']}"
+    except Exception:
+        logger.debug("Could not read Playwright browsers.json", exc_info=True)
+    return None
+
+
+def _chromium_search_dirs() -> list:
+    """Every place Playwright may look for browsers, most specific first."""
+    dirs = []
+    env = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip()
+    if env and env != "0":
+        dirs.append(Path(env))
+    dirs.append(paths.data_dir() / "browsers")
+    local = os.environ.get("LOCALAPPDATA")
+    dirs.append((Path(local) if local else Path.home() / "AppData" / "Local") / "ms-playwright")
+    seen, out = set(), []
+    for d in dirs:
+        key = str(d).lower()
+        if key not in seen:
+            seen.add(key)
+            out.append(d)
+    return out
+
+
 def check_chromium_exists() -> bool:
-    browsers_dir = paths.data_dir() / "browsers"
-    if not browsers_dir.exists():
-        return False
-    chromes = list(browsers_dir.glob("**/chrome.exe"))
-    return len(chromes) > 0
+    """True when a Chromium build matching the installed Playwright is present.
+
+    Looks in PLAYWRIGHT_BROWSERS_PATH, ``data_dir/browsers`` and the default
+    ``%LOCALAPPDATA%/ms-playwright``. When found, PLAYWRIGHT_BROWSERS_PATH is
+    pointed at that folder so the recorder launches the same build.
+    """
+    want = _expected_chromium_dirname()
+    for d in _chromium_search_dirs():
+        if not d.is_dir():
+            continue
+        candidates = [d / want] if want else sorted(d.glob("chromium-*"))
+        for c in candidates:
+            if c.is_dir() and any(c.glob("**/chrome.exe")):
+                os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(d)
+                return True
+    return False
 
 # -----------------------------------------------------------------------------
 # Geometry Persistence Helpers
@@ -1464,8 +1507,9 @@ class LauncherUI:
         def run_thread():
             try:
                 msg_queue.put(("log", "Starting master manual compilation..."))
-                assemble_master_manual(ordered_sessions, output_path, client_key=self.client_key)
-                msg_queue.put(("done", "Compilation finished!"))
+                written = assemble_master_manual(ordered_sessions, output_path, client_key=self.client_key)
+                # The builder may save under a timestamped name when the target is locked.
+                msg_queue.put(("done", Path(written) if written else output_path))
             except Exception as e:
                 logger.exception("Assembly failed")
                 msg_queue.put(("error", str(e)))
@@ -1482,8 +1526,9 @@ class LauncherUI:
                         progress_win.set_status(data)
                     elif msg_type == "done":
                         progress_win.destroy()
-                        messagebox.showinfo("Success", f"Professional Manual compiled successfully!\nSaved to: {output_path.absolute()}")
-                        os.startfile(str(output_path.parent.resolve()))
+                        saved = data if isinstance(data, Path) else output_path
+                        messagebox.showinfo("Success", f"Professional Manual compiled successfully!\nSaved to: {saved.absolute()}")
+                        os.startfile(str(saved.parent.resolve()))
                         self.show("manuals")
                         return
                     elif msg_type == "error":

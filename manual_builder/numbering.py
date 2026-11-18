@@ -37,6 +37,10 @@ class NumberingTracker:
         # Current section tracking
         self._section_counters: Dict[int, int] = {}  # level -> counter
         self._current_module_num: int = 0
+        # Raw counter value behind the last number handed out (the SEQ field's
+        # cached result) and whether that number started a new module run.
+        self.last_figure_seq: int = 0
+        self.last_table_seq: int = 0
 
 
     # ── Section numbering ─────────────────────────────────────────────────
@@ -77,6 +81,24 @@ class NumberingTracker:
             parts.append(str(self._section_counters[l]))
         return ".".join(parts) if parts else "0"
 
+    def last_number(self, level: int) -> int:
+        """Return the last counter handed out at *level* (0 if none yet)."""
+        return self._section_counters.get(level, 0)
+
+    def _format(self, key: str, default: str, module_num: int, n: int) -> str:
+        """Format a caption number; tolerate formats that omit/add {module}."""
+        fmt = default
+        if self.style and hasattr(self.style, 'numbering'):
+            fmt = self.style.numbering.get(key, default) or default
+        if self.mode == "continuous" and "{module}" in fmt:
+            # A module prefix on a document-wide counter would not match the
+            # SEQ field that Word recomputes; continuous numbering is plain.
+            fmt = default
+        try:
+            return fmt.format(module=module_num, fig=n, tbl=n, n=n)
+        except (KeyError, IndexError, ValueError):
+            return default.format(module=module_num, fig=n, tbl=n, n=n)
+
     # ── Figure numbering ──────────────────────────────────────────────────
 
     def next_figure(self, module_num: int = 0) -> str:
@@ -85,26 +107,18 @@ class NumberingTracker:
         """
         if self.mode == "continuous":
             self._global_figure_counter += 1
-            fig_num = self._global_figure_counter
-            fmt = "{fig}"
-            if self.style and hasattr(self.style, 'numbering'):
-                fmt = self.style.numbering.get("figure_format", fmt)
-            return fmt.format(fig=fig_num)
+            fig_num = self.last_figure_seq = self._global_figure_counter
+            return self._format("figure_format", "{fig}", module_num, fig_num)
 
         if module_num == 0:
             self._preamble_figure_counter += 1
-            fig_num = self._preamble_figure_counter
+            fig_num = self.last_figure_seq = self._preamble_figure_counter
             section = self.get_current_section_number()
             return f"{section}-{fig_num}"
 
         self._figure_counter[module_num] = self._figure_counter.get(module_num, 0) + 1
-        fig_num = self._figure_counter[module_num]
-
-        fmt = "{module}-{fig}"
-        if self.style and hasattr(self.style, 'numbering'):
-            fmt = self.style.numbering.get("figure_format", fmt)
-
-        return fmt.format(module=module_num, fig=fig_num)
+        fig_num = self.last_figure_seq = self._figure_counter[module_num]
+        return self._format("figure_format", "{module}-{fig}", module_num, fig_num)
 
     def register_figure(self, number: str, caption: str):
         """Register a figure caption for Table of Figures generation."""
@@ -121,26 +135,18 @@ class NumberingTracker:
         """
         if self.mode == "continuous":
             self._global_table_counter += 1
-            tbl_num = self._global_table_counter
-            fmt = "{tbl}"
-            if self.style and hasattr(self.style, 'numbering'):
-                fmt = self.style.numbering.get("table_format", fmt)
-            return fmt.format(tbl=tbl_num)
+            tbl_num = self.last_table_seq = self._global_table_counter
+            return self._format("table_format", "{tbl}", module_num, tbl_num)
 
         if module_num == 0:
             self._preamble_table_counter += 1
-            tbl_num = self._preamble_table_counter
+            tbl_num = self.last_table_seq = self._preamble_table_counter
             section = self.get_current_section_number()
             return f"{section}-{tbl_num}"
 
         self._table_counter[module_num] = self._table_counter.get(module_num, 0) + 1
-        tbl_num = self._table_counter[module_num]
-
-        fmt = "{module}-{tbl}"
-        if self.style and hasattr(self.style, 'numbering'):
-            fmt = self.style.numbering.get("table_format", fmt)
-
-        return fmt.format(module=module_num, tbl=tbl_num)
+        tbl_num = self.last_table_seq = self._table_counter[module_num]
+        return self._format("table_format", "{module}-{tbl}", module_num, tbl_num)
 
     def register_table(self, number: str, caption: str):
         """Register a table caption for Table of Tables generation."""

@@ -50,6 +50,28 @@ def get_provider_instance(config):
         return BrowserProvider()
 
 
+GENERATION_FAILED_NOTE = (
+    "GENERATION FAILED: AI content could not be generated for this screen. "
+    "See the log for details, then use Regenerate in the Review window."
+)
+
+
+def mark_generation_failed(screen, error: Exception) -> None:
+    """
+    Flag a screen whose AI generation failed.
+
+    The raw error (provider HTTP body, validation dump, …) goes to the log
+    only — screen notes can end up in the .docx.
+    """
+    logger.error(f"Failed to pre-generate Screen {screen.index}: {error}")
+    if not screen.content.notes:
+        screen.content.notes = []
+    if GENERATION_FAILED_NOTE not in screen.content.notes:
+        screen.content.notes.append(GENERATION_FAILED_NOTE)
+    screen.content.screen_name = screen.content.screen_name or f"Screen {screen.index} (Failed)"
+    screen.content.purpose = screen.content.purpose or "AI generation failed."
+
+
 def run_pipeline(
     client_key: str = None,
     start_url: str = None,
@@ -157,15 +179,7 @@ def run_pipeline(
                                           progress_callback=progress_callback, session_dir=latest_session)
                 num_success += 1
             except Exception as e:
-                logger.error(f"Failed to pre-generate Screen {screen.index}: {e}")
-                err_msg = str(e)
-                if "generation failed" in err_msg.lower() or "validationerror" in err_msg.lower() or "json" in err_msg.lower():
-                    err_msg = "Could not parse or validate AI response."
-                if not screen.content.notes:
-                    screen.content.notes = []
-                screen.content.notes.append(f"GENERATION FAILED: {err_msg}")
-                screen.content.screen_name = screen.content.screen_name or f"Screen {screen.index} (Failed)"
-                screen.content.purpose = screen.content.purpose or "AI generation failed."
+                mark_generation_failed(screen, e)
         else:
             num_success += 1
 

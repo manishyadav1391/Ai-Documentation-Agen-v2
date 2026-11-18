@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 import uuid
 from datetime import datetime
@@ -254,6 +255,10 @@ class SessionModel(BaseModel):
 # Session store (load / save with atomic write)
 # ---------------------------------------------------------------------------
 
+class SessionLoadError(ValueError):
+    """Raised when ``session.json`` exists but cannot be parsed or validated."""
+
+
 class SessionStore:
     """Loads and saves ``session.json`` with atomic tmp-then-rename writes."""
 
@@ -261,14 +266,32 @@ class SessionStore:
 
     @classmethod
     def load(cls, session_dir: Path) -> SessionModel:
-        """Load ``session.json`` from *session_dir*, or return empty model."""
+        """
+        Load ``session.json`` from *session_dir*.
+
+        Without a ``session.json`` the session is migrated from legacy flat
+        files (or returned empty).  An unreadable / invalid ``session.json``
+        is copied to ``session.json.corrupt`` and ``SessionLoadError`` is
+        raised — never silently replaced, since the next save would
+        overwrite the user's edits.
+        """
+        session_dir = Path(session_dir)
         path = session_dir / cls.FILENAME
         if path.exists():
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 return SessionModel.model_validate(data)
             except Exception as e:
-                logger.warning(f"Could not parse {path}: {e}. Starting fresh.")
+                backup = path.with_name(path.name + ".corrupt")
+                try:
+                    shutil.copy2(path, backup)
+                except OSError as copy_err:
+                    logger.error(f"Could not back up {path} to {backup.name}: {copy_err}")
+                logger.error(f"Could not parse {path}: {e}")
+                raise SessionLoadError(
+                    f"The session file {path} is damaged and could not be loaded. "
+                    f"A copy was saved as {backup.name}. Details: {e}"
+                ) from e
         # Auto-migrate from legacy flat files if present
         return migrate_legacy(session_dir)
 

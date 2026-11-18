@@ -122,7 +122,7 @@ def render_table_of_tables(doc, section_entry, manifest, style):
     p_tot = doc.add_paragraph()
     _insert_field(
         p_tot,
-        instr_text=f'TOC \\c "{table_prefix}"',
+        instr_text='TOC \\h \\z \\c "Table"',  # SEQ identifier, not the display prefix
         placeholder=f"List of {table_prefix}s will update automatically.",
     )
 
@@ -150,7 +150,7 @@ def render_table_of_figures(doc, section_entry, manifest, style):
     p_tof = doc.add_paragraph()
     _insert_field(
         p_tof,
-        instr_text=f'TOC \\c "{figure_prefix}"',
+        instr_text='TOC \\h \\z \\c "Figure"',  # SEQ identifier, not the display prefix
         placeholder=f"List of {figure_prefix}s will update automatically.",
     )
 

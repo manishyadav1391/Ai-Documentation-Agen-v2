@@ -21,7 +21,7 @@ import httpx
 from loguru import logger
 
 from config import get_config
-from .base import Provider
+from .base import Provider, is_local_endpoint
 
 
 class OllamaProvider(Provider):
@@ -50,8 +50,8 @@ class OllamaProvider(Provider):
         return "ollama"
 
     def is_available(self) -> bool:
-        """True if host and api_key are configured (key required for cloud)."""
-        return bool(self.host and self.api_key)
+        """True if host is set and either a key is configured or the host is local (keyless)."""
+        return bool(self.host and (self.api_key or is_local_endpoint(self.host)))
 
     def chat(self, prompt: str, *, max_tokens: int | None = None,
              temperature: float = 0.1, system: str | None = None) -> str:

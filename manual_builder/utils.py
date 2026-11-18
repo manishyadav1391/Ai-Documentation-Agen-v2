@@ -4,8 +4,11 @@ Word document helper utilities.
 Consolidates XML-level helpers used by all renderers.
 """
 
+import re
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
+
+from loguru import logger
 
 from docx import Document
 from docx.shared import Inches, Pt, Cm, RGBColor
@@ -14,12 +17,113 @@ from docx.oxml.ns import qn, nsdecls
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 
+_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}$")
+# Characters XML 1.0 forbids (python-docx raises ValueError on them): C0 controls
+# other than tab/LF/CR, lone surrogates and the U+FFFE/U+FFFF non-characters.
+_XML_ILLEGAL_RE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+
+
+def is_hex_color(value: Any) -> bool:
+    return bool(_HEX_RE.match(str(value).lstrip("#")))
+
+
 def hex_to_rgb(hex_str: str) -> RGBColor:
     """Convert a hex color string (with or without '#') to docx RGBColor."""
     hex_str = str(hex_str).lstrip("#")
-    if len(hex_str) != 6:
+    if not _HEX_RE.match(hex_str):
+        logger.warning(f"Invalid colour '{hex_str}' in style; using fallback 1B365D.")
         return RGBColor(27, 54, 93)  # fallback dark slate
     return RGBColor(*(int(hex_str[i:i + 2], 16) for i in (0, 2, 4)))
+
+
+def xml_safe(value: Any) -> Any:
+    """
+    Recursively strip XML-illegal characters from strings in *value*
+    (str / list / tuple / dict). Applied once to LLM- and file-sourced content
+    as it enters the builder so a stray control character cannot abort a build.
+    """
+    if isinstance(value, str):
+        return _XML_ILLEGAL_RE.sub("", value)
+    if isinstance(value, list):
+        return [xml_safe(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(xml_safe(v) for v in value)
+    if isinstance(value, dict):
+        return {k: xml_safe(v) for k, v in value.items()}
+    return value
+
+
+def load_yaml_file(path: Path) -> Any:
+    """Read a YAML content file and return XML-safe data ({} when empty)."""
+    import yaml
+    with Path(path).open("r", encoding="utf-8") as f:
+        return xml_safe(yaml.safe_load(f) or {})
+
+
+def read_text_file(path: Path) -> str:
+    """Read a text content file as XML-safe text."""
+    return xml_safe(Path(path).read_text(encoding="utf-8"))
+
+
+def source_file(section_entry, manifest, renderer: str = "renderer") -> Optional[Path]:
+    """
+    Resolve a section's ``source`` to an existing file, or return None (with a
+    warning) when the source is missing, empty or points at a directory.
+    """
+    src = (getattr(section_entry, "source", "") or "").strip()
+    sid = getattr(section_entry, "id", "?")
+    if not src:
+        logger.warning(f"Section '{sid}' ({renderer}) has no 'source'; rendering heading only.")
+        return None
+    path = manifest.get_source_path(src)
+    if not path.is_file():
+        logger.warning(f"Source file for section '{sid}' not found: {path}")
+        return None
+    return path
+
+
+def usable_width_emu(doc_or_section, include_body_indent: bool = False) -> int:
+    """
+    Text width of a section (page width minus left/right margins) in EMU.
+    With *include_body_indent*, also subtract the Normal style's left indent so
+    that inline images in indented body paragraphs stay inside the margin.
+    """
+    sec = doc_or_section.sections[-1] if hasattr(doc_or_section, "sections") else doc_or_section
+    try:
+        width = int(sec.page_width - sec.left_margin - sec.right_margin)
+    except Exception:
+        width = int(Inches(6.0))
+    if include_body_indent and hasattr(doc_or_section, "styles"):
+        try:
+            indent = doc_or_section.styles["Normal"].paragraph_format.left_indent
+            if indent:
+                width -= int(indent)
+        except Exception:
+            pass
+    return width
+
+
+def set_table_width(table, col_widths) -> None:
+    """Set column widths (EMU / Length) on a table, cells included, and its total width."""
+    for idx, w in enumerate(col_widths):
+        table.columns[idx].width = w
+        for cell in table.columns[idx].cells:
+            cell.width = w
+    tblPr = table._tbl.tblPr
+    tblW = tblPr.find(qn("w:tblW"))
+    if tblW is None:
+        tblW = OxmlElement("w:tblW")
+        tblPr.append(tblW)
+    tblW.set(qn("w:type"), "dxa")
+    tblW.set(qn("w:w"), str(int(sum(int(w) for w in col_widths) / 635)))  # EMU -> twips
+
+
+def scaled_widths(doc, inches: list) -> list:
+    """Scale nominal column widths (inches) down to fit the section's usable width."""
+    usable = usable_width_emu(doc)
+    total = sum(int(Inches(w)) for w in inches)
+    factor = min(1.0, usable / total) if total else 1.0
+    return [int(int(Inches(w)) * factor) for w in inches]
 
 
 def set_cell_background(cell, fill_hex: str):
@@ -183,7 +287,8 @@ def add_styled_heading(doc, text: str, level: int, style_config, numbering=None)
 
     If numbering string is provided, prepends it (e.g., "10.1 Add Case").
     """
-    h = doc.add_heading(level=min(level, 4))
+    level = max(1, min(int(level), 4))
+    h = doc.add_heading(level=level)
     display_text = f"{numbering}\t{text}" if numbering else text
     run = h.add_run(display_text)
     hcfg = style_config.heading_config(level)
@@ -204,8 +309,17 @@ def setup_header_footer(doc, style_config, manifest=None):
     Header: logo (left) + document title (right), OR full-width banner image.
     Footer: company name (left) + page number (right)
     """
-    logo_path_str = style_config.logo.get("path", "")
+    logo_path_str = style_config.logo.get("path", "") or ""
     logo_path = Path(logo_path_str) if logo_path_str else None
+    if logo_path is not None and not logo_path.is_absolute() and manifest is not None:
+        # Relative logo paths are relative to the client folder (clients/<key>/)
+        try:
+            from docbot import paths
+            cand = paths.clients_dir() / manifest.client_key / logo_path
+            if cand.exists():
+                logo_path = cand
+        except Exception:
+            pass
     font_name = style_config.body_font
 
     if manifest:
@@ -218,7 +332,11 @@ def setup_header_footer(doc, style_config, manifest=None):
     hdr_mode = style_config.raw.get("header", {}).get("mode", "table")
 
     for section in doc.sections:
-        section.different_first_page_header_footer = True
+        # Page 1 only drops the header/footer when a cover is actually
+        # rendered (GenericBuilder turns this on after the cover).
+        section.different_first_page_header_footer = False
+        full_w = usable_width_emu(section)
+        half_w = full_w // 2
 
         # ── HEADER ──
         header = section.header
@@ -240,18 +358,17 @@ def setup_header_footer(doc, style_config, manifest=None):
             
             if banner_path and banner_path.exists():
                 try:
-                    hdr_p.add_run().add_picture(str(banner_path), width=Inches(6.5))
+                    hdr_p.add_run().add_picture(str(banner_path), width=full_w)
                 except Exception:
                     pass
         else:
             hdr_p = OxmlElement("w:p")
             hdr_element.append(hdr_p)
 
-            table = header.add_table(rows=1, cols=2, width=Inches(6.5))
+            table = header.add_table(rows=1, cols=2, width=full_w)
             table.autofit = False
             remove_table_borders(table)
-            table.columns[0].width = Inches(3.25)
-            table.columns[1].width = Inches(3.25)
+            set_table_width(table, [half_w, full_w - half_w])
 
             cell_logo = table.cell(0, 0)
             p_logo = cell_logo.paragraphs[0]
@@ -296,11 +413,10 @@ def setup_header_footer(doc, style_config, manifest=None):
         ftr_p_xml = OxmlElement("w:p")
         ftr_element.append(ftr_p_xml)
 
-        ftr_table = footer.add_table(rows=1, cols=2, width=Inches(6.5))
+        ftr_table = footer.add_table(rows=1, cols=2, width=full_w)
         ftr_table.autofit = False
         remove_table_borders(ftr_table)
-        ftr_table.columns[0].width = Inches(3.25)
-        ftr_table.columns[1].width = Inches(3.25)
+        set_table_width(ftr_table, [half_w, full_w - half_w])
 
         p_left = ftr_table.cell(0, 0).paragraphs[0]
         p_left.alignment = WD_ALIGN_PARAGRAPH.LEFT
@@ -315,9 +431,20 @@ def setup_header_footer(doc, style_config, manifest=None):
         r_pre.font.name = font_name
         r_pre.font.size = Pt(8)
         r_pre.font.color.rgb = RGBColor(100, 100, 100)
-        add_page_field(p_right.add_run())
+        # Field runs need the same formatting, or the digits render at body size
+        r_page = p_right.add_run()
+        _format_like(r_page, r_pre)
+        add_page_field(r_page)
         r_mid = p_right.add_run(" of ")
         r_mid.font.name = font_name
         r_mid.font.size = Pt(8)
         r_mid.font.color.rgb = RGBColor(100, 100, 100)
-        add_numpages_field(p_right.add_run())
+        r_total = p_right.add_run()
+        _format_like(r_total, r_pre)
+        add_numpages_field(r_total)
+
+
+def _format_like(run, model) -> None:
+    run.font.name = model.font.name
+    run.font.size = model.font.size
+    run.font.color.rgb = model.font.color.rgb

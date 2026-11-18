@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
+from loguru import logger
+
+_NUMBERING_MODES = ("module_prefixed", "continuous")
 
 
 @dataclass
@@ -41,6 +44,8 @@ class ManifestConfig:
     reviewed_by: str = ""
     approved_by: str = ""
     cover_enabled: bool = True
+    # "module_prefixed" (Figure 10-1, NCB) or "continuous" (Figure 1, 2, … NCD)
+    numbering_mode: str = "module_prefixed"
 
     def get_source_path(self, source: str) -> Path:
         """Resolve a source path relative to the client content dir."""
@@ -62,19 +67,35 @@ class ManifestConfig:
         return str(value)
 
 
+def _text(value: Any, default: str = "") -> str:
+    """YAML scalars may arrive as numbers (``version: 1.0``) or null."""
+    if value is None:
+        return default
+    return str(value)
+
+
 def _parse_section(raw: Dict[str, Any]) -> SectionEntry:
     """Parse a single section entry from the manifest YAML."""
-    subsections = []
-    if "subsections" in raw:
-        subsections = [_parse_section(s) for s in raw["subsections"]]
+    subsections = [_parse_section(s) for s in (raw.get("subsections") or []) if isinstance(s, dict)]
 
     return SectionEntry(
-        id=raw.get("id", ""),
-        type=raw.get("type", ""),
-        heading=raw.get("heading", ""),
-        source=raw.get("source", ""),
+        id=_text(raw.get("id")),
+        type=_text(raw.get("type")),
+        heading=_text(raw.get("heading")),
+        source=_text(raw.get("source")),
         subsections=subsections,
     )
+
+
+def _is_placeholder_manifest(path: Path) -> bool:
+    """True for an unfilled template copy (e.g. client_display_name '[Client Name]')."""
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+    except Exception:
+        return False
+    name = _text(raw.get("client_display_name")).strip()
+    return not name or name.startswith("[")
 
 
 def load_manifest(
@@ -109,7 +130,14 @@ def load_manifest(
     legacy_path = base / client_key / "manifest.yaml"
     default_path = base / "_default" / "manifest.yaml"
 
-    if client_manifest.exists():
+    # A clients/<key>/manifest.yaml that is still the unfilled _default template
+    # must not hide a real legacy content/<key>/manifest.yaml (NCB).
+    if client_manifest.exists() and legacy_path.exists() and _is_placeholder_manifest(client_manifest) \
+            and not _is_placeholder_manifest(legacy_path):
+        logger.warning(f"{client_manifest} is an unfilled template; using {legacy_path} instead.")
+        manifest_path = legacy_path
+        resolved_content_dir = base / client_key
+    elif client_manifest.exists():
         manifest_path = client_manifest
         # Content lives under clients/<key>/content/ if present, else legacy content/<key>/
         content_sub = client_root / "content"
@@ -126,29 +154,49 @@ def load_manifest(
             f"(looked at {client_manifest}, {legacy_path}, and {default_path})"
         )
 
+    from manual_builder.utils import xml_safe
     with manifest_path.open("r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
+        raw = xml_safe(yaml.safe_load(f) or {})
+    if not isinstance(raw, dict):
+        raise ValueError(f"{manifest_path} must contain a YAML mapping")
 
-    sections = [_parse_section(s) for s in raw.get("sections", [])]
+    sections = [_parse_section(s) for s in (raw.get("sections") or []) if isinstance(s, dict)]
+
+    # A template copied from _default keeps "client_key: _default"; the folder
+    # it lives in is the real key.
+    key = _text(raw.get("client_key"), client_key) or client_key
+    if key == "_default" and client_key != "_default" and manifest_path != default_path:
+        key = client_key
+
+    mode = _text(raw.get("numbering_mode"), "module_prefixed").strip().lower() or "module_prefixed"
+    if mode not in _NUMBERING_MODES:
+        logger.warning(f"Unknown numbering_mode '{mode}' in {manifest_path}; using module_prefixed.")
+        mode = "module_prefixed"
+
+    version = _text(raw.get("version"), "1.0") or "1.0"
+    cover_enabled = raw.get("cover_enabled", True)
+    if isinstance(cover_enabled, str):
+        cover_enabled = cover_enabled.strip().lower() not in ("false", "no", "0", "off")
 
     return ManifestConfig(
-        client_key=raw.get("client_key", client_key),
-        client_display_name=raw.get("client_display_name", client_key),
-        system_name=raw.get("system_name", ""),
-        system_acronym=raw.get("system_acronym", ""),
-        role_name=raw.get("role_name", ""),
-        manual_title=raw.get("manual_title", "User Manual"),
-        version=raw.get("version", "1.0"),
+        client_key=key,
+        client_display_name=_text(raw.get("client_display_name"), client_key),
+        system_name=_text(raw.get("system_name")),
+        system_acronym=_text(raw.get("system_acronym")),
+        role_name=_text(raw.get("role_name")),
+        manual_title=_text(raw.get("manual_title"), "User Manual") or "User Manual",
+        version=version,
         sections=sections,
         content_dir=resolved_content_dir,
         # Extended spec B fields
-        audience=raw.get("audience", ""),
-        document_version=raw.get("document_version", raw.get("version", "1.0")),
-        confidentiality=raw.get("confidentiality", ""),
-        prepared_by=raw.get("prepared_by", ""),
-        reviewed_by=raw.get("reviewed_by", ""),
-        approved_by=raw.get("approved_by", ""),
-        cover_enabled=raw.get("cover_enabled", True),
+        audience=_text(raw.get("audience")),
+        document_version=_text(raw.get("document_version"), version) or version,
+        confidentiality=_text(raw.get("confidentiality")),
+        prepared_by=_text(raw.get("prepared_by")),
+        reviewed_by=_text(raw.get("reviewed_by")),
+        approved_by=_text(raw.get("approved_by")),
+        cover_enabled=bool(cover_enabled),
+        numbering_mode=mode,
     )
 
 

@@ -3,26 +3,24 @@
 from typing import Any, Dict
 from docx.shared import Inches, Pt
 import yaml
-from manual_builder.utils import add_styled_heading, hex_to_rgb
+from manual_builder.utils import add_styled_heading, hex_to_rgb, load_yaml_file, source_file
 
 
-def render_bullet_list(doc, section_entry, manifest, style, heading_text: str = None):
+def render_bullet_list(doc, section_entry, manifest, style, heading_text: str = None, heading_level: int = 1):
     """
     Renders bullet lists from a YAML file.
     Supports nested bullet points by checking leading spaces in YAML string items.
     """
     title = heading_text if heading_text is not None else section_entry.heading
     if title:
-        add_styled_heading(doc, title, level=1, style_config=style)
+        add_styled_heading(doc, title, level=heading_level, style_config=style)
 
-    list_path = manifest.get_source_path(section_entry.source)
-    if not list_path.exists():
+    list_path = source_file(section_entry, manifest, "bullet_list")
+    if list_path is None:
         return
 
-    with list_path.open("r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-
-    items = data.get("items", [])
+    data = load_yaml_file(list_path)
+    items = (data.get("items") if isinstance(data, dict) else data) or []
     if not items:
         return
 

@@ -13,34 +13,45 @@ Changes (Spec E, F):
 - F5: Skip/flag LLM-generated placeholder text in fields and purpose.
 """
 
+import re
 from pathlib import Path
 from typing import Any, Dict, List
 
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from loguru import logger
 from PIL import Image as PILImage
 
-from manual_builder.utils import add_styled_heading, add_body_paragraph, hex_to_rgb
+from manual_builder.utils import add_styled_heading, add_body_paragraph, hex_to_rgb, usable_width_emu
 from manual_builder.renderers.field_table import render_field_table
 from docbot.export.word_fields import add_caption
 
-# Spec F5: LLM placeholder strings that must never reach the deliverable
-_PLACEHOLDER_STRINGS = {"sample text", "data input", "lorem ipsum", "lorem", "["}
+# Spec F5: LLM placeholder text that must never reach the deliverable. Only
+# whole-text filler counts — real content may legitimately contain "[", "data
+# input", "sample text" (e.g. "Click [Save]", "the Data Input tab").
+_PLACEHOLDER_WHOLE = {"sample text", "data input", "todo", "tbd", "placeholder", "lorem", "..."}
+_PLACEHOLDER_RE = re.compile(
+    r"^\[[^\]]*\]\.?$"                                   # whole text is "[Client Name]"
+    r"|\blorem ipsum\b"                                  # lorem ipsum filler anywhere
+    r"|\[(?:client|system|acronym|role)(?: name)?\]",    # unfilled template tokens
+    re.IGNORECASE,
+)
 
 
 def _is_placeholder(text: str) -> bool:
     """Return True if the text looks like unresolved placeholder content."""
-    if not text:
+    if not text or not str(text).strip():
         return True
-    lower = text.strip().lower()
-    return any(p in lower for p in _PLACEHOLDER_STRINGS)
+    stripped = str(text).strip()
+    if stripped.lower().rstrip(".:!").strip() in _PLACEHOLDER_WHOLE:
+        return True
+    return bool(_PLACEHOLDER_RE.search(stripped))
 
 
 def _usable_width_inches(doc, fallback: float = 6.2) -> float:
-    """Text width of the last section (page width minus left/right margins)."""
+    """Usable width for inline images: text width minus the body (Normal) left indent."""
     try:
-        sec = doc.sections[-1]
-        return (sec.page_width - sec.left_margin - sec.right_margin) / 914400
+        return usable_width_emu(doc, include_body_indent=True) / 914400
     except Exception:
         return fallback
 
@@ -73,7 +84,23 @@ def _add_image_with_border(doc, img_path: Path, style, alt_text: str = "") -> No
     stays freely editable in Word (resize, crop, wrap, replace). The optional
     thin border is a native picture outline rather than a wrapper table.
     Also sets keep_with_next on the image paragraph.
+
+    Returns False (after writing a short note instead) when the file is empty,
+    truncated or not an image, so one bad capture cannot abort the build.
     """
+    try:
+        with PILImage.open(img_path) as probe:
+            probe.load()  # full decode: catches zero-byte and truncated files
+    except Exception as e:
+        logger.warning(f"Skipping unreadable screenshot {img_path}: {e}")
+        p_missing = doc.add_paragraph()
+        r_missing = p_missing.add_run(f"(Screenshot not available: {img_path.name} could not be read.)")
+        r_missing.italic = True
+        r_missing.font.name = style.body_font
+        r_missing.font.size = Pt(style.body_size)
+        r_missing.font.color.rgb = hex_to_rgb(style.get_color("muted"))
+        return False
+
     figures_cfg = style.raw.get("figures", {})
     max_w = min(_figure_limit_inches(figures_cfg, "max_width", 6.2), _usable_width_inches(doc))
     max_h = _figure_limit_inches(figures_cfg, "max_height", 7.5)
@@ -120,12 +147,17 @@ def _add_image_with_border(doc, img_path: Path, style, alt_text: str = "") -> No
         border_color = str(figures_cfg.get("border_color", "AAAAAA")).lstrip("#")
         border_pt = float(figures_cfg.get("border_width_pt", figures_cfg.get("border_pt", 0.5)))
         _add_picture_outline(shape, border_color, border_pt)
+    return True
 
 
-def render_screen(doc, screen_index, session_dir, content_data, screen_meta, style, numbering):
+def render_screen(doc, screen_index, session_dir, content_data, screen_meta, style, numbering,
+                  heading_level: int = 2):
     """
     Renders a screen section including headings, purpose, breadcrumbs,
     screenshots, captions, field list (bullets), steps, notes.
+
+    ``heading_level=1`` renders the screen as its module's Heading 1 (used for
+    single-screen modules in continuous numbering mode).
     """
     module_num = numbering.current_module
 
@@ -138,8 +170,12 @@ def render_screen(doc, screen_index, session_dir, content_data, screen_meta, sty
         f"Screen {screen_index}"
     )
 
-    screen_number_str = numbering.enter_section(level=2)
-    add_styled_heading(doc, screen_name, level=2, style_config=style, numbering=screen_number_str)
+    if heading_level == 1:
+        # Module heading format ("7."), number already set by render_module
+        screen_number_str = f"{numbering.get_current_section_number()}."
+    else:
+        screen_number_str = numbering.enter_section(level=heading_level)
+    add_styled_heading(doc, screen_name, level=heading_level, style_config=style, numbering=screen_number_str)
 
     layout = (style.raw.get("layout", {}) or {}).get("screen_layout", "writer")
     if layout == "writer":
@@ -259,7 +295,9 @@ def render_screen(doc, screen_index, session_dir, content_data, screen_meta, sty
                 r_desc.font.color.rgb = hex_to_rgb(style.get_color("body_text"))
         else:
             tbl_number_str = numbering.next_table(module_num)
-            render_field_table(doc, screen_index, field_details, style, tbl_number_str)
+            render_field_table(doc, screen_index, field_details, style, tbl_number_str,
+                               seq_value=numbering.last_table_seq,
+                               reset=(numbering.mode != "continuous" and numbering.last_table_seq == 1))
             caption_text = (
                 field_details[0].get("field_name", "").split(" -> ")[0]
                 if field_details else "Field Details"
@@ -360,9 +398,11 @@ def _render_figures(doc, screen_index, session_dir, content_data, style, numberi
     figure_prefix = style.numbering.get("figure_prefix", "Figure")
 
     for fig_entry in figures_list:
-        fig_rel_path = fig_entry.get("path", "")
-        # Prefer annotated image when it exists
-        if fig_entry.get("index") == 1 or (fig_rel_path and fig_rel_path.startswith("screen_")):
+        fig_rel_path = fig_entry.get("path", "") or ""
+        # Prefer the annotated image for the screen's main capture only; extra
+        # figures (scroll captures, crops) keep their own file.
+        raw_captures = {f"screen_{screen_index}.png", f"screen_{screen_index}_viewport.png"}
+        if fig_entry.get("index") == 1 or fig_rel_path in raw_captures:
             annotated_name = f"screen_{screen_index}_annotated.png"
             if (session_dir / annotated_name).exists():
                 fig_rel_path = annotated_name
@@ -379,19 +419,24 @@ def _render_figures(doc, screen_index, session_dir, content_data, style, numberi
             fig_caption = screen_name
 
         # E2/E3: image with optional border; keep_with_next set inside helper
-        _add_image_with_border(doc, fig_path, style, alt_text=fig_caption)
+        if not _add_image_with_border(doc, fig_path, style, alt_text=fig_caption):
+            continue  # unreadable image: note written, no caption/number used
 
         fig_number_str = numbering.next_figure(module_num)
 
         # E2: Caption paragraph gets keep_lines_together
         # add_caption handles paragraph creation — we patch it after
+        seq = numbering.last_figure_seq
         add_caption(
             doc,
             prefix=figure_prefix,
             caption_text=fig_caption,
             style_cfg=style,
             seq_name="Figure",
-            module_num=module_num if numbering.mode == "module_prefixed" else None,
+            number=fig_number_str,
+            seq_value=seq,
+            # Restart Word's SEQ counter at each module so F9 keeps "N-1, N-2…"
+            reset_to=1 if (numbering.mode != "continuous" and seq == 1) else None,
             font_size_pt=style.raw.get("figures", {}).get("caption_size_pt", 9),
         )
         # Apply keep_lines_together to the just-added caption paragraph (E2)

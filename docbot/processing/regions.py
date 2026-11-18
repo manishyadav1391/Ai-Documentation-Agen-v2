@@ -86,11 +86,23 @@ def detect_filter_regions(elements: Sequence[Element]) -> list[Region]:
         fid = el.form_id or el.ancestor_section
         if fid in ("form", None):
             fid = "ungrouped"
+            # Outside a form only real form controls count; buttons / links
+            # are covered by detect_standalone_actions.
+            if not _is_form_control(el):
+                continue
         if fid:
             form_buckets.setdefault(fid, []).append(el)
 
-    captured_ids: set[str] = set()
+    # Inputs without a form are grouped by proximity, not into one page-sized box
+    groups: list[list[Element]] = []
     for fid, els in form_buckets.items():
+        if fid == "ungrouped":
+            groups.extend(_cluster_by_proximity(els))
+        else:
+            groups.append(els)
+
+    captured_ids: set[str] = set()
+    for els in groups:
         bboxes = [e.bounding_box for e in els if e.bounding_box.width > 0]
         if not bboxes:
             continue
@@ -233,6 +245,7 @@ def detect_regions(elements: Sequence[Element]) -> list[Region]:
 
     merged = _iou_merge(raw)
     merged = _proximity_merge_nav(merged)
+    merged = _drop_duplicate_boxes(merged)
 
     # Assign stable ids
     for j, r in enumerate(merged):
@@ -341,7 +354,9 @@ def _iou_merge(regions: list[Region]) -> list[Region]:
                 if base.role != other.role:
                     continue
                 iou = base.bounding_box.iou(other.bounding_box)
-                if iou > _IOu_THRESHOLD or base.bounding_box.contains(other.bounding_box):
+                if (iou > _IOu_THRESHOLD
+                        or base.bounding_box.contains(other.bounding_box)
+                        or other.bounding_box.contains(base.bounding_box)):
                     # Merge
                     union = _union_bbox([base.bounding_box, other.bounding_box])
                     all_el = list(dict.fromkeys(base.elements_contained + other.elements_contained))
@@ -360,6 +375,56 @@ def _iou_merge(regions: list[Region]) -> list[Region]:
         merged = new_merged
 
     return merged
+
+
+_FORM_CONTROL_TAGS = {"input", "textarea", "select"}
+_FORM_CONTROL_ROLES = {"textbox", "searchbox", "combobox", "listbox", "checkbox",
+                       "radio", "spinbutton", "switch", "slider"}
+
+
+def _is_form_control(el: Element) -> bool:
+    if el.tag == "button" or el.role == "button" or el.type in ("button", "submit", "reset"):
+        return False
+    return el.tag in _FORM_CONTROL_TAGS or (el.role or "") in _FORM_CONTROL_ROLES
+
+
+def _cluster_by_proximity(els: list[Element], gap_px: float = 60) -> list[list[Element]]:
+    """Split elements into spatially connected groups (bboxes within *gap_px*)."""
+    sized = [e for e in els if e.bounding_box.width > 0]
+    groups: list[list[Element]] = []
+    for el in sized:
+        touching = [g for g in groups
+                    if any(_are_adjacent(el.bounding_box, o.bounding_box, gap_px) for o in g)]
+        merged = [el]
+        for g in touching:
+            merged = g + merged
+            groups.remove(g)
+        groups.append(merged)
+    # Keep original element order inside each group, groups in reading order
+    order = {id(e): i for i, e in enumerate(els)}
+    for g in groups:
+        g.sort(key=lambda e: order[id(e)])
+    groups.sort(key=lambda g: order[id(g[0])])
+    return groups
+
+
+def _drop_duplicate_boxes(regions: list[Region], tol: float = 1.0) -> list[Region]:
+    """
+    Drop a region whose bounding box is identical to an earlier one.
+
+    An ``<h2>`` labelled heading is picked up both as ``page_header`` and as
+    ``section_heading``; the different roles keep the IoU merge from
+    collapsing them, which drew two boxes / callouts on the same spot.
+    """
+    kept: list[Region] = []
+    for r in regions:
+        b = r.bounding_box
+        if any(abs(b.x - k.bounding_box.x) <= tol and abs(b.y - k.bounding_box.y) <= tol
+               and abs(b.width - k.bounding_box.width) <= tol
+               and abs(b.height - k.bounding_box.height) <= tol for k in kept):
+            continue
+        kept.append(r)
+    return kept
 
 
 def _infer_role(el: Element) -> str:

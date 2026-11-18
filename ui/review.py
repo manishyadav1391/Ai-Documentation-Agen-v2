@@ -131,33 +131,32 @@ class ReviewSessionUI:
     # ────────────────────────────────────────────────────────────────────────
 
     def _setup_style(self):
+        # Review-only style names: configuring the plain "TFrame"/"TLabel"/
+        # "TButton" styles here would repaint the launcher window, which shares
+        # this Tk interpreter.
         style = ttk.Style()
-        style.theme_use("clam")
+        if style.theme_use() != "clam":
+            style.theme_use("clam")
         bg_dark = "#1E293B"
-        bg_light = "#F8FAFC"
         accent_blue = "#3B82F6"
-        style.configure("TFrame", background=bg_light)
-        style.configure("Top.TFrame", background=bg_dark)
-        style.configure("Sidebar.TFrame", background="#F1F5F9")
-        style.configure("TLabel", background=bg_light, font=("Segoe UI", 10))
-        style.configure("Top.TLabel", background=bg_dark, foreground="white",
+        style.configure("Review.Top.TFrame", background=bg_dark)
+        style.configure("Review.Sidebar.TFrame", background="#F1F5F9")
+        style.configure("Review.Top.TLabel", background=bg_dark, foreground="white",
                         font=("Segoe UI", 11, "bold"))
-        style.configure("Header.TLabel", font=("Segoe UI", 12, "bold"))
-        style.configure("TButton", font=("Segoe UI", 10))
-        style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"),
+        style.configure("Review.Header.TLabel", font=("Segoe UI", 12, "bold"))
+        style.configure("Review.Accent.TButton", font=("Segoe UI", 10, "bold"),
                         foreground="white", background=accent_blue)
-        style.configure("TNotebook", background=bg_light)
-        style.configure("TNotebook.Tab", font=("Segoe UI", 10))
+        style.map("Review.Accent.TButton", background=[("active", "#2563EB")])
 
     def _build_layout(self):
         # Top bar
-        top_bar = ttk.Frame(self.root, style="Top.TFrame", padding=10)
+        top_bar = ttk.Frame(self.root, style="Review.Top.TFrame", padding=10)
         top_bar.pack(fill=tk.X, side=tk.TOP)
         ttk.Label(top_bar, text="DocBot v3 — Interactive Review",
-                  style="Top.TLabel").pack(side=tk.LEFT, padx=10)
+                  style="Review.Top.TLabel").pack(side=tk.LEFT, padx=10)
         ttk.Button(top_bar, text="Save Session (Ctrl+S)",
                    command=self._save_session).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(top_bar, text="Save & Finish", style="Accent.TButton",
+        ttk.Button(top_bar, text="Save & Finish", style="Review.Accent.TButton",
                    command=self._save_and_close).pack(side=tk.RIGHT, padx=5)
         ttk.Button(top_bar, text="Compile Module",
                    command=self._compile_module).pack(side=tk.RIGHT, padx=5)
@@ -170,9 +169,9 @@ class ReviewSessionUI:
         main_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         # Sidebar
-        sidebar = ttk.Frame(main_paned, style="Sidebar.TFrame", width=220)
+        sidebar = ttk.Frame(main_paned, style="Review.Sidebar.TFrame", width=220)
         main_paned.add(sidebar, weight=0)
-        ttk.Label(sidebar, text="Screens in Session", style="Header.TLabel",
+        ttk.Label(sidebar, text="Screens in Session", style="Review.Header.TLabel",
                   background="#F1F5F9").pack(anchor=tk.W, padx=10, pady=10)
         self.screen_listbox = tk.Listbox(sidebar, font=("Segoe UI", 10),
                                          selectbackground="#3B82F6", bd=0,
@@ -191,7 +190,15 @@ class ReviewSessionUI:
 
         self._zoom_level = 1.0
         zoom_bar = ttk.Frame(canvas_frame, padding=3)
-        zoom_bar.pack(fill=tk.X, pady=(0, 4))
+        zoom_bar.pack(fill=tk.X, pady=(0, 0))
+        # Second row for the editor/manual toggles: on one row, widgets packed
+        # last (Preview, Callouts) were squeezed to nothing below ~1600 px width.
+        manual_bar = ttk.Frame(canvas_frame, padding=(3, 0, 3, 3))
+        manual_bar.pack(fill=tk.X, pady=(0, 4))
+        # Packed first so it keeps its space at any window width.
+        self.preview_btn = ttk.Button(zoom_bar, text="👁️ Preview", width=13,
+                                      command=self._toggle_preview)
+        self.preview_btn.pack(side=tk.RIGHT, padx=6)
         ttk.Label(zoom_bar, text="Zoom:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=6)
         self._zoom_var = tk.DoubleVar(value=1.0)
         zoom_slider = tk.Scale(zoom_bar, from_=0.2, to=4.0, resolution=0.05,
@@ -205,26 +212,25 @@ class ReviewSessionUI:
         ttk.Button(zoom_bar, text="100%", width=5, command=self._zoom_100).pack(side=tk.LEFT, padx=2)
         ttk.Button(zoom_bar, text="200%", width=5, command=self._zoom_200).pack(side=tk.LEFT, padx=2)
         self.callout_visible = tk.BooleanVar(value=True)
-        ttk.Checkbutton(zoom_bar, text="Show callouts (editor)",
+        ttk.Checkbutton(manual_bar, text="Show callouts (editor)",
                         variable=self.callout_visible,
-                        command=self._render_canvas).pack(side=tk.LEFT, padx=10)
+                        command=self._render_canvas).pack(side=tk.LEFT, padx=6)
 
         # Per-screen choice of what gets drawn on the screenshot in the manual
-        ttk.Separator(zoom_bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6)
-        ttk.Label(zoom_bar, text="In manual:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=4)
+        ttk.Separator(manual_bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6)
+        ttk.Label(manual_bar, text="In manual:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=4)
         self.manual_boxes_var = tk.BooleanVar(value=True)
         self.manual_callouts_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(zoom_bar, text="Red boxes",
+        ttk.Checkbutton(manual_bar, text="Red boxes",
                         variable=self.manual_boxes_var,
                         command=self._on_manual_annotation_toggle).pack(side=tk.LEFT, padx=4)
-        ttk.Checkbutton(zoom_bar, text="Callouts",
+        ttk.Checkbutton(manual_bar, text="Callouts",
                         variable=self.manual_callouts_var,
                         command=self._on_manual_annotation_toggle).pack(side=tk.LEFT, padx=4)
-        ttk.Button(zoom_bar, text="Default", width=8,
+        ttk.Button(manual_bar, text="Default", width=8,
                    command=self._reset_manual_annotation_toggles).pack(side=tk.LEFT, padx=4)
-        self.preview_btn = ttk.Button(zoom_bar, text="👁️ Preview", width=10,
-                                      command=self._toggle_preview)
-        self.preview_btn.pack(side=tk.RIGHT, padx=6)
+        ttk.Button(manual_bar, text="Apply to All Screens",
+                   command=self._apply_manual_annotation_to_all).pack(side=tk.LEFT, padx=4)
 
         canvas_container = ttk.Frame(canvas_frame)
         canvas_container.pack(fill=tk.BOTH, expand=True)
@@ -307,13 +313,16 @@ class ReviewSessionUI:
 
         sub_steps = ttk.Frame(sub_notebook, padding=5)
         sub_notebook.add(sub_steps, text="User Steps")
+        # Two rows so that no button is squeezed out when the panel is narrow.
         steps_ctrl = ttk.Frame(sub_steps)
-        steps_ctrl.pack(fill=tk.X, side=tk.TOP, pady=5)
+        steps_ctrl.pack(fill=tk.X, side=tk.TOP, pady=(5, 0))
+        steps_ctrl2 = ttk.Frame(sub_steps)
+        steps_ctrl2.pack(fill=tk.X, side=tk.TOP, pady=(2, 5))
         ttk.Button(steps_ctrl, text="Add Step", command=self._add_step).pack(side=tk.LEFT, padx=2)
         ttk.Button(steps_ctrl, text="Edit Step", command=self._edit_step).pack(side=tk.LEFT, padx=2)
         ttk.Button(steps_ctrl, text="Delete Step", command=self._delete_step).pack(side=tk.LEFT, padx=2)
-        ttk.Button(steps_ctrl, text="Move Up", command=lambda: self._move_step(-1)).pack(side=tk.LEFT, padx=2)
-        ttk.Button(steps_ctrl, text="Move Down", command=lambda: self._move_step(1)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(steps_ctrl2, text="Move Up", command=lambda: self._move_step(-1)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(steps_ctrl2, text="Move Down", command=lambda: self._move_step(1)).pack(side=tk.LEFT, padx=2)
         self.steps_listbox = tk.Listbox(sub_steps, font=("Segoe UI", 9), selectbackground="#3B82F6")
         self.steps_listbox.pack(fill=tk.BOTH, expand=True, pady=5)
         self.steps_listbox.bind("<<ListboxSelect>>", self._on_step_selected)
@@ -345,7 +354,7 @@ class ReviewSessionUI:
 
     def _build_regions_tab(self, parent: ttk.Frame):
         ttk.Label(parent, text="Detected Page Regions list:",
-                  style="Header.TLabel").pack(anchor=tk.W, pady=5)
+                  style="Review.Header.TLabel").pack(anchor=tk.W, pady=5)
         self.regions_listbox = tk.Listbox(parent, font=("Segoe UI", 9),
                                           selectbackground="#3B82F6")
         self.regions_listbox.pack(fill=tk.BOTH, expand=True, pady=5)
@@ -480,6 +489,27 @@ class ReviewSessionUI:
         self._sync_manual_annotation_toggles()
         self._after_manual_annotation_change()
 
+    def _apply_manual_annotation_to_all(self):
+        """Copy the current Red boxes / Callouts choice to every screen of the session."""
+        show_boxes = bool(self.manual_boxes_var.get())
+        show_callouts = bool(self.manual_callouts_var.get())
+        parts = [p for p, on in (("red boxes", show_boxes), ("callouts", show_callouts)) if on]
+        desc = " + ".join(parts) if parts else "clean screenshots (no red boxes, no callouts)"
+        total = len(self.session.screens)
+        if not messagebox.askyesno(
+            "Apply to All Screens",
+            f"Set all {total} screens in this session to: {desc}?\n\n"
+            "This replaces any choice made on individual screens. "
+            "The images are updated when you save.",
+            parent=self.root,
+        ):
+            return
+        for scr in self.session.screens:
+            scr.show_boxes = show_boxes
+            scr.show_callouts = show_callouts
+        self._after_manual_annotation_change()
+        self.status_var.set(f"All {total} screens in manual: {desc}. Save to update the images.")
+
     def _after_manual_annotation_change(self):
         self._refresh_sidebar()
         self.screen_listbox.select_set(self.current_screen_idx)
@@ -509,13 +539,41 @@ class ReviewSessionUI:
     def _save_session(self):
         self._save_active_screen_inputs()
         SessionStore.save(self.session, self.session_dir)
-        self._write_legacy_json_files()
-        render_annotations(self.session_dir, self.screen.index)
-        extract_crops(self.session, self.screen, self.session_dir)
+        # Edits may have been made on any screen visited in this window, so
+        # every screen is re-rendered, not only the one currently shown.
+        profile_data = None
+        try:
+            from docbot.clients.profile import ClientProfile
+            profile_data = ClientProfile.load(get_config().current_client).data
+        except Exception:
+            logger.warning("Could not load client profile for annotation render", exc_info=True)
+        try:
+            self.root.config(cursor="watch")
+            self.root.update_idletasks()
+        except tk.TclError:
+            pass
+        failed = []
+        try:
+            for scr in self.session.screens:
+                try:
+                    self._write_legacy_json_files(scr)
+                    render_annotations(self.session_dir, scr.index, client_profile=profile_data)
+                    extract_crops(self.session, scr, self.session_dir)
+                except Exception:
+                    logger.exception(f"Re-render failed for screen {scr.index}")
+                    failed.append(scr.index)
+        finally:
+            try:
+                self.root.config(cursor="")
+            except tk.TclError:
+                pass
         SessionStore.save(self.session, self.session_dir)
         self._refresh_sidebar()
         logger.info(f"Session data saved atomically for {self.session_dir.name}.")
-        self.status_var.set("Session saved. ✓")
+        if failed:
+            self.status_var.set(f"Session saved, but annotation failed for screen(s) {failed} - see log.")
+        else:
+            self.status_var.set("Session saved. ✓")
 
     def _save_and_close(self):
         self.config.review_geometry = self.root.winfo_geometry()
@@ -529,10 +587,11 @@ class ReviewSessionUI:
         self._save_session()
         self.root.destroy()
 
-    def _write_legacy_json_files(self):
-        final_path = self.session_dir / f"screen_{self.screen.index}_final.json"
+    def _write_legacy_json_files(self, screen=None):
+        screen = screen or self.screen
+        final_path = self.session_dir / f"screen_{screen.index}_final.json"
         regions = []
-        for r in self.screen.regions:
+        for r in screen.regions:
             regions.append({
                 "id": r.id,
                 "role": r.role,
@@ -1367,7 +1426,7 @@ class ReviewSessionUI:
             self._load_region_inputs(r)
             dialog.destroy()
 
-        ttk.Button(dialog, text="Save Region", style="Accent.TButton",
+        ttk.Button(dialog, text="Save Region", style="Review.Accent.TButton",
                    command=save_values).grid(row=6, column=0, columnspan=2, pady=14)
 
     # ────────────────────────────────────────────────────────────────────────
@@ -1579,7 +1638,7 @@ class _RegionAddDialog:
 
         btn_frame = ttk.Frame(self.dialog)
         btn_frame.grid(row=2, column=0, columnspan=2, pady=15)
-        ttk.Button(btn_frame, text="Add Region", style="Accent.TButton",
+        ttk.Button(btn_frame, text="Add Region", style="Review.Accent.TButton",
                    command=self._on_save).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Cancel", command=self.dialog.destroy).pack(side=tk.LEFT, padx=5)
 
@@ -1638,8 +1697,14 @@ def open_review_ui(session_dir: Path, screen_index: int, total_screens: int = No
     """Wrapper entry point loaded by main.py."""
     try:
         has_screens = bool(SessionStore.load(Path(session_dir)).screens)
-    except Exception:
-        has_screens = False
+    except Exception as e:
+        # A damaged session.json must not be reported as an empty session.
+        logger.exception(f"Could not load session {Path(session_dir).name}")
+        if tk._default_root is not None:
+            messagebox.showerror(
+                "Session Could Not Be Opened",
+                f"The session '{Path(session_dir).name}' could not be loaded:\n{e}")
+        return "error"
     if not has_screens:
         logger.warning(f"Review UI not opened: no screens in {Path(session_dir).name}")
         if tk._default_root is not None:
