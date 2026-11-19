@@ -58,8 +58,20 @@ def _fake_chrome(base: Path, dirname: str):
 @pytest.fixture
 def launcher(monkeypatch, tmp_path):
     monkeypatch.setenv("DOCBOT_DATA_DIR", str(tmp_path / "data"))
+    from docbot import paths
+    # isolate from a real Chromium next to the exe / in the repo's browsers folder
+    monkeypatch.setattr(paths, "bundled_browsers_dir", lambda: tmp_path / "app" / "browsers")
     import ui.launcher as L
     return L
+
+
+def test_chromium_found_in_bundled_app_folder(launcher, monkeypatch, tmp_path):
+    _fake_chrome(tmp_path / "app" / "browsers", "chromium-1208")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "empty"))
+    monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
+    monkeypatch.setattr(launcher, "_expected_chromium_dirname", lambda: "chromium-1208")
+    assert launcher.check_chromium_exists() is True
+    assert os.environ["PLAYWRIGHT_BROWSERS_PATH"] == str(tmp_path / "app" / "browsers")
 
 
 def test_chromium_found_in_default_ms_playwright(launcher, monkeypatch, tmp_path):

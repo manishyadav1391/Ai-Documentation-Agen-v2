@@ -15,6 +15,16 @@ def bundle_dir() -> Path:
         return Path(sys._MEIPASS)          # onefile/onedir
     return Path(__file__).resolve().parent.parent   # repo root
 
+def app_dir() -> Path:
+    """Folder holding DocBot.exe (frozen) or the repo root (source run)."""
+    if is_frozen():
+        return Path(sys.executable).resolve().parent
+    return bundle_dir()
+
+def bundled_browsers_dir() -> Path:
+    """Chromium shipped next to the exe by the installer (may not exist)."""
+    return app_dir() / "browsers"
+
 def data_dir() -> Path:
     """User-writable workspace: config, clients, sessions, outputs, logs.
 

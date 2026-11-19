@@ -44,3 +44,5 @@ htmlcov/
 secrets.yaml
 docbot.pid
 docbot.lock
+.buildenv/
+installer/Output/

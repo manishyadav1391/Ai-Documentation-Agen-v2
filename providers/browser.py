@@ -23,8 +23,13 @@ from .base import Provider
 class BrowserProvider(Provider):
     """Copy-paste provider that writes a prompt and reads a response from disk."""
 
-    def __init__(self, work_dir: Path = Path(".")) -> None:
-        self.work_dir = work_dir
+    def __init__(self, work_dir: Path | None = None) -> None:
+        # Default to the writable workspace, never the current folder: an
+        # installed copy is started with the (read-only) install folder as cwd.
+        if work_dir is None:
+            from docbot import paths
+            work_dir = paths.data_dir()
+        self.work_dir = Path(work_dir)
         cfg = get_config()
         self.editor = cfg.providers.browser.editor_command
 

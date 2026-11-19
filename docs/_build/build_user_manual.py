@@ -39,6 +39,11 @@ CALLOUTS = {
                     (("regen", "regen_steps"), "Ask AI again", "b", 0, 0)],
     "review_steps": [("steps", "Steps for this screen", "l", 0, 0), (("add", "edit", "del"), "Add, edit, delete", "l", 0, 0)],
     "review_regions": [("regions", "Detected regions", "l", 0, 0)],
+    "review_region_selected": [(("boxes", "callouts"), "Print boxes / callouts", "b", -120, 230),
+                               ("applyall", "Same for all screens", "b", -60, 330),
+                               ("label", "Callout text", "l", 0, 0),
+                               (("delete", "reset"), "Delete or reset", "l", 0, 0)],
+    "region_add_dialog": [("label", "Text shown in callout", "r", 0, 0), ("ok", "Add the callout", "b", 0, 0)],
     "review_preview": [("canvas", "As it will print", "in", 320, 420), ("preview", "Back to editing", "b", -260, 0)],
     "manuals_view": [("tree", "Generated manuals", "in", 0, 120), ("open", "Open in Word", "t", 0, 0),
                      ("delete", "Delete file", "t", 0, 0)],
@@ -214,6 +219,55 @@ def build(img: dict, pages: dict) -> Manual:
     fig("review_regions", "Region Structure tab")
     m.para("Lists the regions detected on the screen. Each region becomes a red box with a callout. Double-click a "
            "region to change its label, position or size; width and height must be at least 8 pixels.")
+
+    m.heading("Adding and Removing Callouts", 2)
+    m.para("Every region on a screenshot is printed as a **red box** around the area and a **callout** (the white "
+           "speech bubble with red text) that names it. The callout text is the region's label. You can add your own "
+           "callouts, change or move them, remove single callouts, or print a screen, or the whole module, without them. "
+           "All of this is done in **Edit mode** (the Preview button shows Preview, not Edit Mode).")
+    fig("review_region_selected", "A selected region with its controls")
+    m.heading("Add a Callout", 3)
+    m.steps([
+        "Move to the screen with **Prev** / **Next** or by clicking it in **Screens in Session**.",
+        "Drag with the left mouse button across an **empty area** of the screenshot to draw a box around the part you "
+        "want to point out.",
+        "In the **Add Region Details** window, type the **Region Label** (this is the text shown in the callout) and "
+        "choose the **Semantic Role**.",
+        "Click **Add Region**. The red box and its callout appear on the screenshot.",
+    ])
+    fig("region_add_dialog", "Add Region Details window")
+    m.note("Click Cancel in the Add Region Details window to discard the box you have just drawn.")
+    m.heading("Change or Move a Callout", 3)
+    m.bullet("Change the text", "click the box, then edit **Region Label** in the **Region Structure** tab; or "
+             "double-click the box and change the label in **Edit Region Details**.")
+    m.bullet("Move the box", "drag inside the box, or use the arrow keys.")
+    m.bullet("Resize the box", "drag one of the eight handles of the selected box, or use Shift + arrow keys.")
+    m.bullet("Move the bubble", "drag the callout bubble to any position. **Reset Callout to Auto** (or right-click the "
+             "bubble) puts it back to automatic placement.")
+    m.heading("Remove a Callout", 3)
+    m.para("To remove one callout together with its red box:")
+    m.steps([
+        "Click the box (or its bubble) on the screenshot, or select it in the **Region Structure** list.",
+        "Press the **Delete** key, click **Delete Region**, or right-click the box and choose **Delete region**.",
+    ])
+    m.note("Press Ctrl+Z to undo a deletion, move or resize.")
+    m.heading("Show or Hide Callouts and Red Boxes", 3)
+    m.para("The **In manual** check boxes above the screenshot decide what is printed for the current screen, without "
+           "deleting any region:")
+    m.table(["To do this", "Do this"], [
+        ["Print red boxes and callouts (normal)", "Tick **Red boxes** and **Callouts**."],
+        ["Print red boxes only, no callout bubbles", "Tick **Red boxes**, untick **Callouts**."],
+        ["Print a clean screenshot on this screen", "Untick **Red boxes** and **Callouts**."],
+        ["Remove callouts and red boxes from **every** screen of the module",
+         "Untick both check boxes, click **Apply to All Screens**, click **Yes**, then click **Save Session**."],
+        ["Put callouts back on every screen", "Tick both check boxes, click **Apply to All Screens**, **Yes**, **Save Session**."],
+        ["Return one screen to the client's standard setting", "Click **Default**."],
+    ], widths=[2.9, 3.3])
+    m.para("Use **Preview** to check the result before saving. Screens printed without annotations are marked **[no annotations]** in "
+           "the Screens in Session list.")
+    m.note("Hiding callouts does not delete the regions, so you can switch them back on at any time. Click Save Session "
+           "(or Save & Finish) so the images in the manual are updated.")
+
     m.heading("Preview and Saving", 2)
     fig("review_preview", "Preview mode")
     m.bullet("Preview", "shows the screenshot exactly as it will appear in the manual. Click Edit Mode to return.", "Button")

@@ -112,6 +112,7 @@ def _chromium_search_dirs() -> list:
     env = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip()
     if env and env != "0":
         dirs.append(Path(env))
+    dirs.append(paths.bundled_browsers_dir())
     dirs.append(paths.data_dir() / "browsers")
     local = os.environ.get("LOCALAPPDATA")
     dirs.append((Path(local) if local else Path.home() / "AppData" / "Local") / "ms-playwright")
